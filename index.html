@@ -86,7 +86,7 @@ const PLANT={
   {id:'parabrisas',n:'Parabrisas',g:'libre',o:'h'},{id:'motor',n:'Motor',g:'libre',o:'h'},{id:'vin',n:'VIN grabado',g:'franja',o:'h',ocr:'vin'},{id:'motor_n',n:'Número de motor',g:'franja',o:'h',ocr:'motor'},{id:'km',n:'Kilometraje',g:'franja',o:'h',ocr:'km'},
   {id:'tablero',n:'Tablero completo',g:'libre',o:'h'},{id:'consola',n:'Tablero central con radio',g:'libre',o:'h'},{id:'asientos_d',n:'Asientos delanteros',g:'libre',o:'h'},{id:'asientos_t',n:'Asientos traseros',g:'libre',o:'h'},{id:'neum',n:'Neumáticos (4)',g:'libre',o:'h'},{id:'llanta',n:'Llanta de emergencia',g:'libre',o:'h'},
   {id:'mat_f',n:'Matrícula (frente)',g:'tarjeta',o:'v',doc:true,ocr:'matricula'},{id:'mat_r',n:'Matrícula (reverso)',g:'tarjeta',o:'v',doc:true},{id:'lic_f',n:'Licencia (frente)',g:'tarjeta',o:'v',doc:true},{id:'lic_r',n:'Licencia (reverso)',g:'tarjeta',o:'v',doc:true}],
-  form:[{id:'ident',n:'Identificación',campos:[['placa','Placa',1],['vin','VIN (chasis)',1],['motor','Número de motor',0],['anio','Año',1],['color','Color',1],['km','Kilometraje',1]]},
+  form:[{id:'ident',n:'Identificación',campos:[['marca','Marca',1,'pre','marcas'],['modelo','Modelo',1,'pre','modelos','marca'],['anio','Año',1,'pre'],['placa','Placa',1,'pre'],['vin','VIN o chasis',1,'lec'],['motor','Número de motor',1,'lec'],['color','Color',1,'cat','colores'],['km','Kilometraje',1,'lec']]},
    {id:'estado',n:'Estado general',sel:[['pintura','Pintura'],['carroceria','Carrocería'],['vidrios','Vidrios'],['luces','Luces'],['llantas','Llantas'],['tapiceria','Tapicería']]},
    {id:'extras',n:'Extras declarados',extras:['Aros de aleación','Láminas de seguridad']},{id:'danos',n:'Daños',danos:true},{id:'obs',n:'Observaciones',obs:true}]},
  moto:{nombre:'Motos v1 · Presencial',pasos:[
@@ -97,6 +97,10 @@ const PLANT={
 const TIPOV={sedan:'Sedán o hatchback',suv:'SUV o Jeep',camioneta:'Camioneta',moto:'Moto'};
 const plantDe=v=>PLANT[v.carro==='moto'?'moto':'auto'];
 const CLAVE='sirius-inspector-v2';
+let CAT={marcas:[{marca:'Chevrolet',modelos:['Onix','D-Max','Sail']},{marca:'Kia',modelos:['Sportage','Seltos','Soluto','Rio']},{marca:'Hyundai',modelos:['Tucson','Creta']},{marca:'Toyota',modelos:['Corolla Cross','Hilux','RAV4','Fortuner']},{marca:'Hino',modelos:['Dutro']},{marca:'Mazda',modelos:['CX-30','CX-5']},{marca:'Yamaha',modelos:['FZ']}],
+ colores:['Blanco','Negro','Gris','Plata','Rojo','Azul','Verde','Amarillo','Naranja','Café','Beige','Vino','Dorado','Celeste','Otro']};
+function catDesdeConfig(cm){if(!cm)return;if(Array.isArray(cm.marcas))CAT.marcas=cm.marcas.map(m=>({marca:m.marca,modelos:(m.modelos||[]).map(x=>typeof x==='string'?x:x.modelo)}));if(Array.isArray(cm.colores))CAT.colores=cm.colores;}
+function opciones(cat,F){if(cat==='marcas')return CAT.marcas.map(m=>m.marca);if(cat==='colores')return CAT.colores;if(cat==='modelos'){const m=CAT.marcas.find(x=>x.marca===((F.marca||{}).valor));return m?m.modelos:[];}return [];}
 const VIS0=()=>[{id:'v1',caso:'20152',h:'08:30',dur:45,bien:'Kia Rio 2023 · GSE1120',carro:'sedan',placa:'GSE1120',anio:'2023',dir:'Av. 6 de Diciembre N34-120 y Portugal',contacto:'Luis Cevallos',cel:'0998123456',lat:-0.1902,lng:-78.4842,st:'pend'},
  {id:'v2',caso:'20171',h:'11:00',dur:45,bien:'Toyota Hilux 2021 · PCQ4417',carro:'camioneta',placa:'PCQ4417',anio:'2021',dir:'Av. Amazonas y Naciones Unidas',contacto:'María Paredes',cel:'0987654321',lat:-0.1765,lng:-78.4842,st:'pend'},
  {id:'v3',caso:'20177',h:'15:00',dur:45,bien:'Yamaha FZ 2022 · MBC345A',carro:'moto',placa:'MB345A',anio:'2022',dir:'Av. de los Shyris y Suecia',contacto:'Pedro Jaramillo',cel:'0976543210',lat:-0.1692,lng:-78.4786,st:'pend'}];
@@ -118,12 +122,13 @@ let MIPOS=null;if(navigator.geolocation)navigator.geolocation.getCurrentPosition
 function distOferta(la,ln){if(la==null||ln==null||!MIPOS)return 'distancia por calcular';const d=dist(MIPOS[0],MIPOS[1],+la,+ln);return d>=1000?(d/1000).toFixed(1).replace('.',',')+' km de ti':Math.round(d)+' m de ti';}
 async function cargarDatos(silencioso){if(MODO!=='prueba')return;try{
  let EST={};try{const e=await SB.rpc('inspector_estado_visitas');EST=e.data||{};}catch(e){}
+ try{const cf=await SB.rpc('configuracion_vigente',{p_claves:['SIRIUS_CATALOGOS_MAESTROS']});catDesdeConfig(cf.data&&cf.data.SIRIUS_CATALOGOS_MAESTROS);}catch(e){}
  const {data:vs,error}=await SB.from('visitas').select('id,estado,inicio,fin,direccion,llegada,caso_id,casos(numero,grupo_ramo,asegurado)').eq('inspector_id',YO.id).order('inicio');if(error)throw error;
  const ids=[...new Set(vs.map(v=>v.caso_id))];const rs=ids.length?((await SB.from('riesgos').select('caso_id,descripcion,datos,suma_asegurada').in('caso_id',ids)).data||[]):[];
  const prev=Object.fromEntries((S.vis||[]).map(v=>[v.id,v]));
  S.vis=vs.map(v=>{const r=rs.find(x=>x.caso_id===v.caso_id)||{datos:{}},ini=v.inicio?new Date(v.inicio):null,d=v.direccion||{},p=prev[v.id]||{},ct=((v.casos.asegurado||{}).contacto)||{};
   const base={id:v.id,casoId:v.caso_id,caso:String(v.casos.numero),h:ini?p2(ini.getHours())+':'+p2(ini.getMinutes()):'—',fecha:v.inicio||null,dur:ini&&v.fin?Math.round((new Date(v.fin)-ini)/60000):45,bien:r.descripcion||'Riesgo',
-   carro:p.carro||(r.datos&&r.datos.carroceria)||'sedan',placa:r.datos&&r.datos.placa,anio:r.datos&&r.datos.anio?String(r.datos.anio):'',dir:d.direccion||'Dirección por confirmar',contacto:d.quien||ct.nombre||'Contacto',
+   carro:p.carro||(r.datos&&r.datos.carroceria)||'sedan',placa:r.datos&&r.datos.placa,anio:r.datos&&r.datos.anio?String(r.datos.anio):'',marca:r.datos&&r.datos.marca||'',modelo:r.datos&&r.datos.modelo||'',dir:d.direccion||'Dirección por confirmar',contacto:d.quien||ct.nombre||'Contacto',
    cel:d.cel||ct.celular||'',lat:+(d.lat||-0.1902),lng:+(d.lng||-78.4842),grupo:v.casos.grupo_ramo};
   const ex=(EST||{})[v.id]||{},ce=ex.casoEstado;const st=p.st==='cola'?'cola':ce==='Informe por completar'?'term':ce==='Devuelto al inspector'?(p.st==='cur'?'cur':'dev'):(v.estado==='Terminada'||v.estado==='Enviada')?'env':(ESTV[v.estado]||'pend');
   return Object.assign({},p,base,{st,fotos:p.fotos||{},lect:p.lect||{},vence:ex.vence||p.vence,motivo:ex.motivo,puedeCompletar:ex.puedeCompletar,suma:r.suma_asegurada});});
@@ -171,7 +176,7 @@ async function procesar(it){const v=S.vis.find(x=>x.id===it.vis)||{};
   if(url){const {error}=await SB.storage.from('evidencias').upload(ruta,await dataBlob(url),{contentType:'image/jpeg',upsert:false});if(error&&!/exists|Duplicate/i.test(error.message))throw error;}
   const f=(v.fotos||{})[it.paso]||{};const lect={};Object.entries(v.lect||{}).forEach(([k,x])=>{if(x&&x.paso)lect[k]=x;});
   const {error}=await SB.from('evidencias').upsert({id_cliente:it.idc,caso_id:v.casoId,visita_id:it.vis,paso:it.paso,canal:'App del inspector',ruta:url?ruta:'(imagen de prueba)',hora:new Date(f.t||Date.now()).toISOString(),lat:f.gps?f.gps[0]:null,lng:f.gps?f.gps[1]:null,validacion:f.val||null,lecturas:lect,creado_por:YO.id},{onConflict:'id_cliente',ignoreDuplicates:true});if(error)throw error;return;}
- if(it.tipo==='terminar'){const {data,error}=await SB.rpc('inspector_terminar',{p_visita:it.vis,p_respuestas:v.form||{},p_criterio:v.crit,p_comentario:v.critCom||'',p_id_cliente:it.idc});if(error)throw error;if(data&&data.error)throw new Error(data.error);if(data&&data.vence)v.vence=data.vence;return;}
+ if(it.tipo==='terminar'){const {data,error}=await SB.rpc('inspector_terminar',{p_visita:it.vis,p_respuestas:conClaves(v.form||{}),p_criterio:v.crit,p_comentario:v.critCom||'',p_id_cliente:it.idc});if(error)throw error;if(data&&data.error)throw new Error(data.error);if(data&&data.vence)v.vence=data.vence;return;}
  if(it.tipo==='completar'){const C=v.comp||{};const resp=Object.assign({},v.form||{},{valorComercial:{valor:C.valorRef,org:'Inspector'},valorRecomendado:{valor:C.valorRec,org:'Inspector'},fuenteValor:{valor:C.fuente,org:'Inspector'}});
   const {data,error}=await SB.rpc('inspector_completar',{p_visita:it.vis,p_respuestas:resp,p_criterio:C.decision,p_motivo:C.motivo||null});if(error)throw error;if(data&&data.ok===false)throw new Error(data.mensaje);v.st='env';v.det=C.decision;v.enviado=new Date().toLocaleString('es-EC');return;}
  if(it.tipo==='informe'){const {data,error}=await SB.rpc('inspector_enviar',{p_visita:it.vis,p_respuestas:v.form||{},p_determinacion:v.det||'Enviar a calificación',p_motivo:v.detMotivo||null,p_id_cliente:it.idc});if(error)throw error;if(data&&data.error)throw new Error(data.error);
@@ -181,6 +186,9 @@ async function reenviarFotos(){const v=VA();if(!v){toast('Abre la visita');retur
   const ruta='app/'+v.id+'/'+p.id+'-'+Date.now()+'.jpg';const up=await SB.storage.from('evidencias').upload(ruta,await dataBlob(url),{contentType:'image/jpeg'});if(up.error){f++;continue;}
   const {error}=await SB.from('evidencias').update({ruta}).eq('visita_id',v.id).eq('paso',p.id).eq('ruta','(imagen de prueba)');if(error)f++;else n++;}
  toast(n?n+' foto(s) reales enviadas a SIRIUS'+(f?' · '+f+' con error':''):'No hay fotos reales guardadas en este celular para esta visita');}
+// Las respuestas viajan con las claves de la app y con las de la plantilla del informe (veh_*), para que el back-office las ubique.
+const CLAVES_PLANTILLA={marca:'veh_marca',modelo:'veh_modelo',anio:'veh_anio_modelo',placa:'veh_placa',vin:'veh_vin',motor:'veh_numero_motor',color:'veh_color',km:'veh_kilometraje'};
+function conClaves(F){const r=Object.assign({},F);Object.entries(CLAVES_PLANTILLA).forEach(([a,b])=>{if(F[a]&&F[a].valor)r[b]={valor:F[a].valor,org:F[a].org||'Inspector',conf:F[a].conf||null,solicitud:F[a].sol||null};});return r;}
 async function syncReal(){if(sinc||!enLinea()||!S.cola.length)return;sinc=true;netBar();
  while(S.cola.length&&enLinea()){const it=S.cola[0];try{await procesar(it);S.cola.shift();}catch(e){it.err=(it.err||0)+1;const red=/fetch|network|Failed/i.test(String(e.message||e));
   if(/^ESPERA/.test(String(e.message))){it.err=0;S.cola.push(S.cola.shift());await new Promise(r=>setTimeout(r,1500));if(S.cola.every(x=>x.esperas))break;continue;}if(red)break;if(it.err>=3){S.cola.shift();toast('No se pudo enviar un elemento: '+(e.message||e));}else{await new Promise(r=>setTimeout(r,1500));}}guardar();netBar();}
@@ -246,15 +254,27 @@ let MAP=null;function mapa(){const el=$('#mapa');if(!el||!window.L){if(el)el.inn
 // ====== Formulario de la plantilla presencial ======
 function formulario(v){const F=v.form||(v.form=nuevoForm(v));guardar();const sec=plantDe(v).form;
  return sec.map(s=>{const open=!(v.cerr||{})[s.id];let body='';
-  if(s.campos)body=s.campos.map(([k,l,req])=>{const c=F[k]||{};return '<div class="f"><label>'+l+(req?' <span class="req">*</span>':'')+'</label><input '+(k==='km'||k==='anio'?'inputmode="numeric"':'')+' value="'+esc(c.valor||'')+'" oninput="setCampo(\''+k+'\',this.value)">'+(c.org?'<div class="org '+(c.conf&&c.conf<90?'conf':'pre')+'">Origen: '+esc(c.org)+(c.conf?' · '+c.conf+' %':'')+(c.conf&&c.conf<90?' · por confirmar':'')+'</div>':'')+'</div>';}).join('');
+  if(s.campos)body=s.campos.map(([k,l,req,modo,cat,padre])=>campoHTML(F,k,l,req,modo,cat,padre)).join('');
   if(s.sel)body=s.sel.map(([k,l])=>'<div class="f"><label>'+l+' <span class="req">*</span></label><div class="seg">'+['Bueno','Regular','Malo'].map(o=>'<button class="'+(F[k]===o?'on':'')+'" onclick="VA().form.'+k+'=\''+o+'\';guardar();pintar()">'+o+'</button>').join('')+'</div></div>').join('');
   if(s.extras)body=s.extras.map((x,i)=>'<div class="f"><label>'+x+' <span class="req">*</span></label><div class="seg">'+['Verificado','No lo tiene'].map(o=>'<button class="'+((F.extras||{})[x]===o?'on':'')+'" onclick="(VA().form.extras=VA().form.extras||{})[\''+x+'\']=\''+o+'\';guardar();pintar()">'+o+'</button>').join('')+'</div></div>').join('');
   if(s.danos)body=(F.danos||[]).map((d,i)=>'<div class="card" style="margin:6px 0;padding:8px 10px"><b>'+esc(d.zona)+'</b> · '+esc(d.tipo)+' · '+esc(d.grav)+' <button class="btn3" style="color:var(--bad)" onclick="VA().form.danos.splice('+i+',1);guardar();pintar()">Quitar</button></div>').join('')+'<button class="btn btn2" onclick="nuevoDano()">+ Agregar un daño</button>'+(!(F.danos||[]).length?'<p class="mut sm">Sin daños registrados.</p>':'');
   if(s.obs)body='<div class="f"><textarea rows="3" oninput="VA().form.obs=this.value;guardar()" placeholder="Observaciones para el calificador">'+esc(F.obs||'')+'</textarea></div>';
   return '<div class="sec '+(open?'open':'')+'"><button onclick="(VA().cerr=VA().cerr||{})[\''+s.id+'\']='+open+';guardar();pintar()"><span>'+s.n+'</span><span>'+(open?'▴':'▾')+'</span></button><div class="in">'+body+'</div></div>';}).join('');}
-function nuevoForm(v){const pr=k=>{const L=v.lect&&v.lect[k];return L&&L.valor?{valor:L.valor,org:'Foto «'+L.paso+'»',conf:L.conf}:{valor:'',org:''};};return {placa:pr('placa'),vin:pr('vin'),motor:pr('motor'),anio:{valor:v.anio,org:'Solicitud'},color:{valor:'',org:''},km:pr('km'),danos:[],extras:{}};}
-function setCampo(k,val){const F=VA().form;F[k]={valor:val,org:'Inspector'};guardar();}
-function faltan(v){const F=v.form||{},out=[];plantDe(v).form.forEach(s=>{(s.campos||[]).forEach(([k,l,req])=>{if(req&&!(F[k]&&F[k].valor))out.push(l);});(s.sel||[]).forEach(([k,l])=>{if(!F[k])out.push(l);});(s.extras||[]).forEach(x=>{if(!(F.extras||{})[x])out.push(x);});});return out;}
+function origenHTML(c){if(!c||!c.org)return '';const baja=c.conf&&c.conf<90&&!c.ok;return '<div class="org '+(baja?'conf':'pre')+'">Origen: '+esc(c.org)+(c.conf?' · '+c.conf+' %':'')+(baja?' · por confirmar':'')+(c.sol&&c.sol!==c.valor?' · solicitud: '+esc(c.sol):'')+'</div>';}
+function campoHTML(F,k,l,req,modo,cat,padre){const c=F[k]||{};const lab='<label>'+l+(req?' <span class="req">*</span>':'')+'</label>';
+ if(cat){const ops=opciones(cat,F),fuera=c.valor&&ops.length&&!ops.includes(c.valor);const sel='<select onchange="setCat(\''+k+'\',this.value,\''+(padre?'':k)+'\')"><option value="">'+(padre&&!(F[padre]||{}).valor?'Elige primero '+padre:'Elige…')+'</option>'+(fuera?'<option selected>'+esc(c.valor)+'</option>':'')+ops.map(o=>'<option'+(o===c.valor?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>';
+  const conf=modo==='pre'&&c.valor&&!c.ok?'<div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn2" style="width:auto;margin:0;padding:6px 12px;min-height:0" onclick="confirmarCampo(\''+k+'\')">Confirmar</button><span class="mut sm" style="align-self:center">o corrige con la lista</span></div>':'';
+  return '<div class="f">'+lab+sel+(fuera?'<div class="org conf">Fuera del catálogo · por confirmar</div>':'')+origenHTML(c)+conf+'</div>';}
+ const pend=(modo==='pre'||modo==='lec')&&c.valor&&!c.ok&&(modo==='pre'||(c.conf&&c.conf<90));
+ return '<div class="f">'+lab+'<input '+(k==='km'||k==='anio'?'inputmode="numeric"':'')+' value="'+esc(c.valor||'')+'" oninput="setCampo(\''+k+'\',this.value)">'+origenHTML(c)+
+  (pend?'<div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn2" style="width:auto;margin:0;padding:6px 12px;min-height:0" onclick="confirmarCampo(\''+k+'\')">'+(modo==='lec'?'Confirmar lectura':'Confirmar')+'</button><span class="mut sm" style="align-self:center">o corrige escribiendo</span></div>':'')+'</div>';}
+function confirmarCampo(k){const c=VA().form[k];if(c){c.ok=true;if(c.org==='Solicitud')c.org='Solicitud · confirmado en campo';}guardar();pintar();}
+function setCat(k,val,esPadre){const F=VA().form,ant=F[k]||{};F[k]={valor:val,org:ant.sol&&val!==ant.sol?'Corregido en campo':'Inspector',ok:true,sol:ant.sol};
+ if(k==='marca'&&F.modelo){F.modelo={valor:'',org:'',sol:(F.modelo||{}).sol};}guardar();pintar();}
+function nuevoForm(v){const pr=k=>{const L=v.lect&&v.lect[k];return L&&L.valor?{valor:L.valor,org:'Foto «'+L.paso+'»',conf:L.conf}:{valor:'',org:''};};const so=(k,val)=>val?{valor:String(val),org:'Solicitud',sol:String(val)}:{valor:'',org:''};
+ return {marca:so('marca',v.marca),modelo:so('modelo',v.modelo),anio:so('anio',v.anio),placa:v.placa?so('placa',v.placa):pr('placa'),vin:pr('vin'),motor:pr('motor'),color:{valor:'',org:''},km:pr('km'),danos:[],extras:{}};}
+function setCampo(k,val){const F=VA().form,ant=F[k]||{};F[k]={valor:val,org:ant.sol&&val!==ant.sol?'Corregido en campo':'Inspector',ok:true,sol:ant.sol};guardar();}
+function faltan(v){const F=v.form||{},out=[];plantDe(v).form.forEach(s=>{(s.campos||[]).forEach(([k,l,req,modo])=>{const c=F[k]||{};if(req&&!c.valor)out.push(l);else if(c.valor&&!c.ok&&(modo==='pre'||(modo==='lec'&&c.conf&&c.conf<90)))out.push('Confirmar '+l);});(s.sel||[]).forEach(([k,l])=>{if(!F[k])out.push(l);});(s.extras||[]).forEach(x=>{if(!(F.extras||{})[x])out.push(x);});});return out;}
 function nuevoDano(){const s=document.createElement('div');s.className='sheet';s.innerHTML='<div><b style="font-size:17px">Agregar un daño</b><div class="f"><label>Zona</label><select id="dz">'+['Frente','Lateral izquierdo','Lateral derecho','Posterior','Techo','Parabrisas','Interior'].map(z=>'<option>'+z+'</option>').join('')+'</select></div><div class="f"><label>Tipo</label><select id="dt">'+['Rayón','Abolladura','Rotura','Óxido','Faltante'].map(z=>'<option>'+z+'</option>').join('')+'</select></div><div class="f"><label>Gravedad</label><select id="dg"><option>Leve</option><option>Media</option><option>Grave</option></select></div><button class="btn" id="dok">Agregar</button><button class="btn btn3" id="dno">Cancelar</button></div>';document.body.appendChild(s);
  s.querySelector('#dno').onclick=()=>s.remove();s.querySelector('#dok').onclick=()=>{VA().form.danos.push({zona:s.querySelector('#dz').value,tipo:s.querySelector('#dt').value,grav:s.querySelector('#dg').value});guardar();s.remove();pintar();};}
 // ====== Acciones de la visita ======
@@ -369,12 +389,31 @@ async function guardarFoto(p,c,url,val){const v=VA();FOTOMEM[v.id+'_'+p.id]=url;
 function sistema(p){toast('Usaremos la cámara del celular');const inp=$('#fCam');inp.onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const im=new Image();im.onload=()=>{const c=document.createElement('canvas'),k=Math.min(1,1600/Math.max(im.width,im.height));c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(im.src);guardarFoto(p,c,c.toDataURL('image/jpeg',.82),'Cámara del sistema: encuadre no verificado');};im.src=URL.createObjectURL(f);};inp.click();}
 // ====== Lectura en el celular (la confirma el motor de extracción de SIRIUS) ======
 let ocrW=null;async function wk(){if(!window.Tesseract)await carga('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');if(!ocrW)ocrW=await Tesseract.createWorker('eng');return ocrW;}
-async function leer(p,c){const v=VA();try{const w=await wk();await w.setParameters({tessedit_pageseg_mode:p.ocr==='matricula'?'6':'11'});const r=await w.recognize(c),T=(r.data.text||'').toUpperCase().replace(/\s+/g,' '),conf=Math.round(r.data.confidence||0);
- const put=(k,val)=>{if(!val)return;v.lect[k]={valor:val,conf,paso:p.n};if(v.form&&v.form[k]&&!v.form[k].valor)v.form[k]={valor:val,org:'Foto «'+p.n+'»',conf};};
- if(p.ocr==='placa'||p.ocr==='matricula'){const m=T.match(/\b([A-Z]{2,3})[- ]?(\d{3,4}[A-Z]?)\b/);if(m)put('placa',m[1]+m[2]);}
- if(p.ocr==='vin'||p.ocr==='matricula'){const m=T.replace(/[^A-Z0-9 ]/g,'').match(/\b[A-HJ-NPR-Z0-9]{17}\b/);if(m)put('vin',m[0]);}
- if(p.ocr==='motor'){const m=T.replace(/[^A-Z0-9 ]/g,'').match(/\b[A-Z0-9]{6,14}\b/);if(m)put('motor',m[0]);}
- if(p.ocr==='km'){const m=(T.match(/\d{3,7}/g)||[]).sort((a,b)=>b.length-a.length)[0];if(m)put('km',m);}guardar();}catch(e){}}
+const CONFUNDIBLES={O:'0',Q:'0',D:'0',I:'1',L:'1',B:'8',S:'5',Z:'2',G:'6'};
+function variantes(c){const W=Math.min(1600,c.width*2),H=Math.round(c.height*W/c.width),out=[];const base=document.createElement('canvas');base.width=W;base.height=H;const bx=base.getContext('2d');bx.drawImage(c,0,0,W,H);
+ const im=bx.getImageData(0,0,W,H),D=im.data,Y=new Uint8Array(W*H);let s=0;for(let i=0,q=0;i<D.length;i+=4,q++){Y[q]=.299*D[i]+.587*D[i+1]+.114*D[i+2];s+=Y[q];}const m=s/(W*H);
+ [[m,false],[m,true],[m-25,false],[m+25,false]].forEach(([t,inv])=>{const cv=document.createElement('canvas');cv.width=W;cv.height=H;const x=cv.getContext('2d'),o=x.createImageData(W,H);for(let q=0;q<Y.length;q++){let v=Y[q]>t?255:0;if(inv)v=255-v;o.data[q*4]=o.data[q*4+1]=o.data[q*4+2]=v;o.data[q*4+3]=255;}x.putImageData(o,0,0);out.push(cv);});return out;}
+function votar(lista){if(!lista.length)return null;const lens={};lista.forEach(x=>lens[x.t.length]=(lens[x.t.length]||0)+1);const L=+Object.entries(lens).sort((a,b)=>b[1]-a[1])[0][0],ok=lista.filter(x=>x.t.length===L);
+ let t='';for(let i=0;i<L;i++){const v={};ok.forEach(x=>v[x.t[i]]=(v[x.t[i]]||0)+1);t+=Object.entries(v).sort((a,b)=>b[1]-a[1])[0][0];}
+ const acuerdo=ok.filter(x=>x.t===t).length/lista.length,conf=Math.round(Math.min(99,(ok.reduce((a,x)=>a+x.c,0)/ok.length)*.6+acuerdo*40));return {t,conf};}
+function patron(tipo,T){T=T.toUpperCase().replace(/[^A-Z0-9 ]/g,' ');let m;
+ if(tipo==='placa'){m=T.replace(/\s+/g,' ').match(/\b([A-Z]{2,3})\s?(\d{3,4}[A-Z]?)\b/);return m?m[1]+m[2]:null;}
+ if(tipo==='vin'){const j=T.replace(/\s+/g,'');m=j.match(/[A-HJ-NPR-Z0-9]{17}/);return m?m[0]:null;}
+ if(tipo==='motor'){m=T.replace(/\s+/g,' ').match(/\b[A-Z0-9]{6,14}\b/);return m?m[0]:null;}
+ if(tipo==='km'){m=(T.match(/\d{3,7}/g)||[]).sort((a,b)=>b.length-a.length)[0];return m||null;}return null;}
+async function leerVotado(c,tipo){const w=await wk();await w.setParameters({tessedit_pageseg_mode:tipo==='km'?'7':'6',tessedit_char_whitelist:tipo==='km'?'0123456789':'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- '});
+ const res=[];for(const cv of variantes(c)){try{const r=await w.recognize(cv);const v=patron(tipo,r.data.text||'');if(v)res.push({t:v,c:r.data.confidence||0});}catch(e){}}return votar(res);}
+function iguales(a,b){const n=x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'').replace(/[OQDILBSZG]/g,ch=>CONFUNDIBLES[ch]);return n(a)===n(b);}
+async function leer(p,c){const v=VA();try{
+ const put=(k,r)=>{if(!r)return;v.lect[k]={valor:r.t,conf:r.conf,paso:p.n};const F=v.form;if(!F)return;const act=F[k]||{};
+  if(act.sol){if(iguales(r.t,act.sol)){F[k]=Object.assign({},act,{conf:r.conf,ok:act.ok,leida:r.t});}else{F[k]=Object.assign({},act,{leida:r.t,conf:r.conf,org:'Solicitud · lectura distinta ('+r.t+')'});}}
+  else if(!act.valor||act.org.startsWith('Foto'))F[k]={valor:r.t,org:'Foto «'+p.n+'»',conf:r.conf};};
+ if(p.ocr==='placa'||p.ocr==='matricula')put('placa',await leerVotado(c,'placa'));
+ if(p.ocr==='vin'||p.ocr==='matricula')put('vin',await leerVotado(c,'vin'));
+ if(p.ocr==='motor')put('motor',await leerVotado(c,'motor'));
+ if(p.ocr==='km')put('km',await leerVotado(c,'km'));
+ guardar();if(S.p==='visita')pintar();}catch(e){}}
+
 // ====== Lo que recibe SIRIUS ======
 function verSirius(){const v=VA(),F=v.form||{};const fila=(l,c,e)=>'<tr><td>'+l+'</td><td><b>'+esc(c&&c.valor||'—')+'</b><br><small class="mut">'+esc(c&&c.org||'')+(c&&c.conf?' · '+c.conf+' %':'')+'</small></td><td>'+(e&&c&&c.valor?(c.valor===e?'<span class="chip c-a">Coincide</span>':'<span class="chip c-x">No coincide</span>'):'')+'</td></tr>';
  const s=document.createElement('div');s.className='sheet';s.innerHTML='<div><b style="font-size:17px">Lo que recibe SIRIUS · caso '+v.caso+'</b><p class="mut sm">'+plantDe(v).nombre+' · '+TIPOV[v.carro]+'<br>Llegada: '+esc(v.llegada?v.llegada.txt:'—')+'</p><table class="tbl">'+fila('Placa',F.placa,v.placa)+fila('VIN',F.vin)+fila('Nº de motor',F.motor)+fila('Año',F.anio,v.anio)+fila('Kilometraje',F.km)+'<tr><td>Daños</td><td colspan="2">'+((F.danos||[]).map(d=>esc(d.zona+' · '+d.tipo+' · '+d.grav)).join('<br>')||'Ninguno')+'</td></tr><tr><td>Fotos</td><td colspan="2">'+Object.keys(v.fotos||{}).length+' de '+plantDe(v).pasos.length+'</td></tr><tr><td>Determinación</td><td colspan="2">'+esc(v.det||'—')+(v.detMotivo?' · '+esc(v.detMotivo):'')+'</td></tr></table><button class="btn" onclick="this.closest(\'.sheet\').remove()">Cerrar</button></div>';document.body.appendChild(s);}
