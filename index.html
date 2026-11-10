@@ -94,6 +94,26 @@ const PLANT={
   {id:'motor',n:'Motor',g:'libre',o:'h'},{id:'vin',n:'VIN grabado',g:'franja',o:'h',ocr:'vin'},{id:'km',n:'Kilometraje',g:'franja',o:'h',ocr:'km'},{id:'neum',n:'Neumáticos (2)',g:'libre',o:'h'},
   {id:'mat_f',n:'Matrícula (frente)',g:'tarjeta',o:'v',doc:true,ocr:'matricula'},{id:'mat_r',n:'Matrícula (reverso)',g:'tarjeta',o:'v',doc:true},{id:'lic_f',n:'Licencia (frente)',g:'tarjeta',o:'v',doc:true},{id:'lic_r',n:'Licencia (reverso)',g:'tarjeta',o:'v',doc:true}],
   form:[{id:'ident',n:'Identificación',campos:[['placa','Placa',1],['vin','VIN (chasis)',1],['anio','Año',1],['color','Color',1],['km','Kilometraje',1]]},{id:'estado',n:'Estado general',sel:[['pintura','Pintura'],['luces','Luces'],['llantas','Llantas']]},{id:'danos',n:'Daños',danos:true},{id:'obs',n:'Observaciones',obs:true}]}};
+// ====== Configuración viva (DEC-187): pasos de la plantilla vigente leídos de la base ======
+let PLANT_INFO={auto:{nombre:'Vehículos livianos · Presencial',version:'local'},moto:{nombre:'Motos · Presencial',version:'local'}};
+function pasoDesdePlantilla(p){const id=p.id,n=p.name||id,t=(n+' '+(p.guide||'')).toLowerCase();let g='libre',v=null,o='h',ocr=null,espejo=false,doc=false;
+ if(/matr[ií]cula|c[eé]dula|licencia|contrato|factura|documento/.test(t)){g=/contrato|factura/.test(t)?'hoja':'tarjeta';o='v';doc=true;if(/matr[ií]cula frontal/.test(t))ocr='matricula';}
+ else if(/placa (delantera|trasera)/.test(t)){g='franja';ocr='placa';}
+ else if(/vin|chasis|plaqueta|serie/.test(t)){g='franja';ocr='vin';}
+ else if(/kilometraje|od[oó]metro/.test(t)){g='franja';ocr='km';}
+ else if(/n[uú]mero de motor/.test(t)){g='franja';ocr='motor';}
+ else if(/^frontal|frente/.test(n.toLowerCase())){g='silueta';v='frente';ocr='placa';}
+ else if(/^posterior/.test(n.toLowerCase())){g='silueta';v='posterior';ocr='placa';}
+ else if(/lateral/.test(t)){g='silueta';v='lateral';espejo=/izquierd/.test(t);}
+ return {id,n,g,v,o,ocr,espejo,doc,grupo:p.group||''};}
+function aplicarPlantillas(cf){try{const P=(cf&&cf.plantillas)||{};const pres=x=>(x.pasos||[]).filter(p=>p.req&&p.req.P);
+ const ver=x=>parseFloat(String(x.version||'0').replace(',','.'))||0;
+ // De las versiones de cada plantilla se usa la vigente: la marcada como vigente o, si no hay marca, la de versión mayor.
+ const ultima=re=>{const c=Object.entries(P).filter(([k,x])=>re.test(k)||re.test(x.nombre||''));if(!c.length)return null;const vig=c.filter(([k,x])=>x.vigente===true||x.estado==='Vigente');return (vig.length?vig:c).sort((a,b)=>ver(b[1])-ver(a[1]))[0];};
+ const vl=ultima(/veh[ií]culos livianos/i),mo=ultima(/^motos/i);
+ if(vl&&pres(vl[1]).length){PLANT.auto.pasos=pres(vl[1]).map(pasoDesdePlantilla);PLANT.auto.nombre=(vl[1].nombre||vl[0])+' · Presencial';PLANT_INFO.auto={nombre:(vl[1].nombre||vl[0])+' · Presencial',version:String(vl[1].version||cf.version||'')};}
+ if(mo&&pres(mo[1]).length){PLANT.moto.pasos=pres(mo[1]).map(pasoDesdePlantilla);PLANT.moto.nombre=(mo[1].nombre||mo[0])+' · Presencial';PLANT_INFO.moto={nombre:(mo[1].nombre||mo[0])+' · Presencial',version:String(mo[1].version||cf.version||'')};}
+ S.plantCache=cf;}catch(e){console.warn('plantillas',e);}}
 const TIPOV={sedan:'Sedán o hatchback',suv:'SUV o Jeep',camioneta:'Camioneta',moto:'Moto'};
 const plantDe=v=>PLANT[v.carro==='moto'?'moto':'auto'];
 const CLAVE='sirius-inspector-v2';
@@ -122,7 +142,8 @@ let MIPOS=null;if(navigator.geolocation)navigator.geolocation.getCurrentPosition
 function distOferta(la,ln){if(la==null||ln==null||!MIPOS)return 'distancia por calcular';const d=dist(MIPOS[0],MIPOS[1],+la,+ln);return d>=1000?(d/1000).toFixed(1).replace('.',',')+' km de ti':Math.round(d)+' m de ti';}
 async function cargarDatos(silencioso){if(MODO!=='prueba')return;try{
  let EST={};try{const e=await SB.rpc('inspector_estado_visitas');EST=e.data||{};}catch(e){}
- try{const cf=await SB.rpc('configuracion_vigente',{p_claves:['SIRIUS_CATALOGOS_MAESTROS']});catDesdeConfig(cf.data&&cf.data.SIRIUS_CATALOGOS_MAESTROS);}catch(e){}
+ try{const cf=await SB.rpc('configuracion_vigente',{p_claves:['SIRIUS_CATALOGOS_MAESTROS']});catDesdeConfig(cf.data&&cf.data.SIRIUS_CATALOGOS_MAESTROS);S.catCache=cf.data&&cf.data.SIRIUS_CATALOGOS_MAESTROS;}catch(e){if(S.catCache)catDesdeConfig(S.catCache);}
+ try{const pl=await SB.rpc('plantillas_vigentes');if(pl.data&&pl.data.plantillas)aplicarPlantillas(pl.data);}catch(e){if(S.plantCache)aplicarPlantillas(S.plantCache);}
  const {data:vs,error}=await SB.from('visitas').select('id,estado,inicio,fin,direccion,llegada,caso_id,casos(numero,grupo_ramo,asegurado)').eq('inspector_id',YO.id).order('inicio');if(error)throw error;
  const ids=[...new Set(vs.map(v=>v.caso_id))];const rs=ids.length?((await SB.from('riesgos').select('caso_id,descripcion,datos,suma_asegurada').in('caso_id',ids)).data||[]):[];
  const prev=Object.fromEntries((S.vis||[]).map(v=>[v.id,v]));
@@ -176,7 +197,7 @@ async function procesar(it){const v=S.vis.find(x=>x.id===it.vis)||{};
   if(url){const {error}=await SB.storage.from('evidencias').upload(ruta,await dataBlob(url),{contentType:'image/jpeg',upsert:false});if(error&&!/exists|Duplicate/i.test(error.message))throw error;}
   const f=(v.fotos||{})[it.paso]||{};const lect={};Object.entries(v.lect||{}).forEach(([k,x])=>{if(x&&x.paso)lect[k]=x;});
   const {error}=await SB.from('evidencias').upsert({id_cliente:it.idc,caso_id:v.casoId,visita_id:it.vis,paso:it.paso,canal:'App del inspector',ruta:url?ruta:'(imagen de prueba)',hora:new Date(f.t||Date.now()).toISOString(),lat:f.gps?f.gps[0]:null,lng:f.gps?f.gps[1]:null,validacion:f.val||null,lecturas:lect,creado_por:YO.id},{onConflict:'id_cliente',ignoreDuplicates:true});if(error)throw error;return;}
- if(it.tipo==='terminar'){const {data,error}=await SB.rpc('inspector_terminar',{p_visita:it.vis,p_respuestas:conClaves(v.form||{}),p_criterio:v.crit,p_comentario:v.critCom||'',p_id_cliente:it.idc});if(error)throw error;if(data&&data.error)throw new Error(data.error);if(data&&data.vence)v.vence=data.vence;return;}
+ if(it.tipo==='terminar'){const {data,error}=await SB.rpc('inspector_terminar',{p_visita:it.vis,p_respuestas:Object.assign(conClaves(v.form||{}),{__plantilla:PLANT_INFO[v.carro==='moto'?'moto':'auto']}),p_criterio:v.crit,p_comentario:v.critCom||'',p_id_cliente:it.idc});if(error)throw error;if(data&&data.error)throw new Error(data.error);if(data&&data.vence)v.vence=data.vence;return;}
  if(it.tipo==='completar'){const C=v.comp||{};const resp=Object.assign({},v.form||{},{valorComercial:{valor:C.valorRef,org:'Inspector'},valorRecomendado:{valor:C.valorRec,org:'Inspector'},fuenteValor:{valor:C.fuente,org:'Inspector'}});
   const {data,error}=await SB.rpc('inspector_completar',{p_visita:it.vis,p_respuestas:resp,p_criterio:C.decision,p_motivo:C.motivo||null});if(error)throw error;if(data&&data.ok===false)throw new Error(data.mensaje);v.st='env';v.det=C.decision;v.enviado=new Date().toLocaleString('es-EC');return;}
  if(it.tipo==='informe'){const {data,error}=await SB.rpc('inspector_enviar',{p_visita:it.vis,p_respuestas:v.form||{},p_determinacion:v.det||'Enviar a calificación',p_motivo:v.detMotivo||null,p_id_cliente:it.idc});if(error)throw error;if(data&&data.error)throw new Error(data.error);
@@ -234,10 +255,10 @@ yo(){const P=PF(),m=S.mes;let fin='';
  return '<h1>'+P.nombre+'</h1><p class="mut sm">'+P.org+'</p><div class="sw"><div><b>Recibir ofertas de la red</b><br><small class="mut">Solo en tus zonas y horarios</small></div><button class="tog '+(S.recibir?'on':'')+'" aria-pressed="'+S.recibir+'" onclick="S.recibir=!S.recibir;guardar();pintar()"></button></div><div class="sw"><div><b>Sonido de ofertas</b><br><small class="mut">Sonido y vibración al llegar una oferta</small></div><button class="tog '+(S.sonido?'on':'')+'" aria-pressed="'+S.sonido+'" onclick="S.sonido=!S.sonido;guardar();audioOn();if(S.sonido)sonar();pintar()"></button></div><div class="sw"><div><b>Zonas</b><br><small class="mut">Quito norte · Quito centro</small></div></div><div class="sw"><div><b>Modalidades</b><br><small class="mut">Presencial · virtual guiada</small></div></div>'+fin+'<button class="btn btnr" onclick="S.bloq=true;guardar();bloqueo()">Bloquear la app</button>'+prueba();},
 };
 // Mapa de captura: vista superior del vehículo con los puntos de las fotos exteriores, el siguiente paso al centro y la lista completa a pedido.
-const POS={frente:[1,.5],lat_izq:[.5,0],posterior:[0,.5],lat_der:[.5,1],parabrisas:[.66,.5],motor:[.86,.5]};
+const POS={frente:[1,.5],lat_izq:[.5,0],posterior:[0,.5],lat_der:[.5,1],parabrisas:[.66,.5],motor:[.86,.5],exteriores_frontal:[1,.5],exteriores_posterior:[0,.5],exteriores_parabrisas:[.7,.5],exteriores_lateral_izquierdo_de_ade:[.68,0],exteriores_lateral_izquierdo_de_atr:[.32,0],exteriores_lateral_derecho_de_ade:[.68,1],exteriores_lateral_derecho_de_atr:[.32,1],motor_habitaculo_del_motor:[.88,.5]};
 function anillo(h,t){const r=24,c=2*Math.PI*r,f=t?h/t:0;return '<svg class="ring" viewBox="0 0 58 58"><circle cx="29" cy="29" r="'+r+'" fill="none" stroke="#e3e9f0" stroke-width="6"/><circle cx="29" cy="29" r="'+r+'" fill="none" stroke="#16a34a" stroke-width="6" stroke-linecap="round" stroke-dasharray="'+(c*f)+' '+c+'" transform="rotate(-90 29 29)"/><text x="29" y="33" text-anchor="middle" font-family="Mulish" font-weight="900" font-size="13" fill="#0f1b2d">'+h+'/'+t+'</text></svg>';}
 function mapaCaptura(v,P,hechas,tot,sig){const geo=GEO[v.carro]||GEO.sedan,ext=P.filter(p=>POS[p.id]),resto=P.filter(p=>!POS[p.id]&&!p.doc),docs=P.filter(p=>p.doc);
- let h='<div class="cap"><div class="capTop">'+anillo(hechas,tot)+'<div><b>'+(hechas<tot?'Fotos y documentos':'Captura completa')+'</b><div class="mut sm">'+plantDe(v).nombre+'</div></div></div>';
+ let h='<div class="cap"><div class="capTop">'+anillo(hechas,tot)+'<div><b>'+(hechas<tot?'Fotos y documentos':'Captura completa')+'</b><div class="mut sm">'+plantDe(v).nombre+' · v'+(PLANT_INFO[v.carro==='moto'?'moto':'auto'].version||'')+'</div></div></div>';
  h+='<div class="vmap">'+geo.icono.replace('<svg ','<svg class="ic" ')+ext.map(p=>{const q=POS[p.id],ok=v.fotos[p.id],s2=sig&&sig.id===p.id;return '<button class="vpt '+(ok?'ok':s2?'sig':'')+'" style="left:'+(q[0]*100)+'%;top:'+(q[1]*100)+'%" onclick="camara(\''+p.id+'\')" aria-label="'+p.n+(ok?', tomada':'')+'">'+(ok?'✓':P.indexOf(p)+1)+'</button>';}).join('')+'</div>';
  if(sig)h+='<button class="nextBtn" onclick="camara(\''+sig.id+'\')"><span class="ph">'+ic(sig.doc?'doc':'cam')+'</span><span><small>Siguiente · paso '+(P.indexOf(sig)+1)+' de '+tot+'</small><b>'+sig.n+'</b></span></button>';
  h+='<details class="grupo" '+(v.verPasos?'open':'')+' ontoggle="VA().verPasos=this.open;guardar()"><summary class="btn3" style="list-style:none">'+ic('grid')+'Ver todos los pasos</summary>'+
