@@ -266,8 +266,10 @@ function campoHTML(F,k,l,req,modo,cat,padre){const c=F[k]||{};const lab='<label>
   const conf=modo==='pre'&&c.valor&&!c.ok?'<div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn2" style="width:auto;margin:0;padding:6px 12px;min-height:0" onclick="confirmarCampo(\''+k+'\')">Confirmar</button><span class="mut sm" style="align-self:center">o corrige con la lista</span></div>':'';
   return '<div class="f">'+lab+sel+(fuera?'<div class="org conf">Fuera del catálogo · por confirmar</div>':'')+origenHTML(c)+conf+'</div>';}
  const pend=(modo==='pre'||modo==='lec')&&c.valor&&!c.ok&&(modo==='pre'||(c.conf&&c.conf<90));
- return '<div class="f">'+lab+'<input '+(k==='km'||k==='anio'?'inputmode="numeric"':'')+' value="'+esc(c.valor||'')+'" oninput="setCampo(\''+k+'\',this.value)">'+origenHTML(c)+
+ const sug=c.sugerida&&!c.valor?'<div class="org conf">Lectura poco confiable ('+c.confSug+' %): '+esc(c.sugerida)+' <button class="btn3" style="padding:0;color:var(--p)" onclick="usarSugerida(\''+k+'\')">Usar y revisar</button></div>':'';
+ return '<div class="f">'+lab+'<input '+(k==='km'||k==='anio'?'inputmode="numeric"':'')+' value="'+esc(c.valor||'')+'" oninput="setCampo(\''+k+'\',this.value)">'+origenHTML(c)+sug+
   (pend?'<div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn2" style="width:auto;margin:0;padding:6px 12px;min-height:0" onclick="confirmarCampo(\''+k+'\')">'+(modo==='lec'?'Confirmar lectura':'Confirmar')+'</button><span class="mut sm" style="align-self:center">o corrige escribiendo</span></div>':'')+'</div>';}
+function usarSugerida(k){const c=VA().form[k];if(c&&c.sugerida){c.valor=c.sugerida;c.org='Lectura poco confiable · revisada';c.conf=c.confSug;c.ok=false;delete c.sugerida;}guardar();pintar();}
 function confirmarCampo(k){const c=VA().form[k];if(c){c.ok=true;if(c.org==='Solicitud')c.org='Solicitud · confirmado en campo';}guardar();pintar();}
 function setCat(k,val,esPadre){const F=VA().form,ant=F[k]||{};F[k]={valor:val,org:ant.sol&&val!==ant.sol?'Corregido en campo':'Inspector',ok:true,sol:ant.sol};
  if(k==='marca'&&F.modelo){F.modelo={valor:'',org:'',sol:(F.modelo||{}).sol};}guardar();pintar();}
@@ -403,9 +405,13 @@ function patron(tipo,T){T=T.toUpperCase().replace(/[^A-Z0-9 ]/g,' ');let m;
  if(tipo==='km'){m=(T.match(/\d{3,7}/g)||[]).sort((a,b)=>b.length-a.length)[0];return m||null;}return null;}
 async function leerVotado(c,tipo){const w=await wk();await w.setParameters({tessedit_pageseg_mode:tipo==='km'?'7':'6',tessedit_char_whitelist:tipo==='km'?'0123456789':'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- '});
  const res=[];for(const cv of variantes(c)){try{const r=await w.recognize(cv);const v=patron(tipo,r.data.text||'');if(v)res.push({t:v,c:r.data.confidence||0});}catch(e){}}return votar(res);}
+// Descarta lecturas imposibles: VIN de 17 caracteres sin I, O ni Q, con al menos 4 dígitos y sin 4 letras iguales seguidas; motor con letras y dígitos.
+function plausible(k,t){t=String(t||'');if(k==='vin')return /^[A-HJ-NPR-Z0-9]{17}$/.test(t)&&(t.match(/\d/g)||[]).length>=4&&!/([A-Z])\1{3}/.test(t);
+ if(k==='motor')return t.length>=6&&/\d/.test(t)&&/[A-Z]/.test(t)&&!/(.)\1{3}/.test(t);if(k==='km')return /^\d{1,7}$/.test(t);return true;}
 function iguales(a,b){const n=x=>String(x||'').toUpperCase().replace(/[^A-Z0-9]/g,'').replace(/[OQDILBSZG]/g,ch=>CONFUNDIBLES[ch]);return n(a)===n(b);}
 async function leer(p,c){const v=VA();try{
- const put=(k,r)=>{if(!r)return;v.lect[k]={valor:r.t,conf:r.conf,paso:p.n};const F=v.form;if(!F)return;const act=F[k]||{};
+ const put=(k,r)=>{if(!r||!plausible(k,r.t))return;v.lect[k]={valor:r.t,conf:r.conf,paso:p.n};const F=v.form;if(!F)return;const act=F[k]||{};
+  if(r.conf<60&&!act.sol){F[k]=Object.assign({},act,{sugerida:r.t,confSug:r.conf});return;}
   if(act.sol){if(iguales(r.t,act.sol)){F[k]=Object.assign({},act,{conf:r.conf,ok:act.ok,leida:r.t});}else{F[k]=Object.assign({},act,{leida:r.t,conf:r.conf,org:'Solicitud · lectura distinta ('+r.t+')'});}}
   else if(!act.valor||act.org.startsWith('Foto'))F[k]={valor:r.t,org:'Foto «'+p.n+'»',conf:r.conf};};
  if(p.ocr==='placa'||p.ocr==='matricula')put('placa',await leerVotado(c,'placa'));
