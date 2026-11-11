@@ -96,23 +96,21 @@ const PLANT={
   form:[{id:'ident',n:'Identificación',campos:[['placa','Placa',1],['vin','VIN (chasis)',1],['anio','Año',1],['color','Color',1],['km','Kilometraje',1]]},{id:'estado',n:'Estado general',sel:[['pintura','Pintura'],['luces','Luces'],['llantas','Llantas']]},{id:'danos',n:'Daños',danos:true},{id:'obs',n:'Observaciones',obs:true}]}};
 // ====== Configuración viva (DEC-187): pasos de la plantilla vigente leídos de la base ======
 let PLANT_INFO={auto:{nombre:'Vehículos livianos · Presencial',version:'local'},moto:{nombre:'Motos · Presencial',version:'local'}};
-function pasoDesdePlantilla(p){const id=p.id,n=p.name||id,t=(n+' '+(p.guide||'')).toLowerCase();let g='libre',v=null,o='h',ocr=null,espejo=false,doc=false;
- if(/matr[ií]cula|c[eé]dula|licencia|contrato|factura|documento/.test(t)){g=/contrato|factura/.test(t)?'hoja':'tarjeta';o='v';doc=true;if(/matr[ií]cula frontal/.test(t))ocr='matricula';}
- else if(/placa (delantera|trasera)/.test(t)){g='franja';ocr='placa';}
- else if(/vin|chasis|plaqueta|serie/.test(t)){g='franja';ocr='vin';}
- else if(/kilometraje|od[oó]metro/.test(t)){g='franja';ocr='km';}
- else if(/n[uú]mero de motor/.test(t)){g='franja';ocr='motor';}
- else if(/^frontal|frente/.test(n.toLowerCase())){g='silueta';v='frente';ocr='placa';}
- else if(/^posterior/.test(n.toLowerCase())){g='silueta';v='posterior';ocr='placa';}
- else if(/lateral/.test(t)){g='silueta';v='lateral';espejo=/izquierd/.test(t);}
+// Guía y lectura por los atributos del paso (guía «Tipo · detalle», grupo e identificador), no por el nombre: renombrar no cambia su función.
+function pasoDesdePlantilla(p){const id=p.id,n=p.name||id,gu=String(p.guide||''),tipo=gu.split('·')[0].trim().toLowerCase(),det=(gu.split('·')[1]||'').trim().toLowerCase(),grupo=String(p.group||'').toLowerCase(),feeds=JSON.stringify(p.feedsX||p.feeds||'');
+ let g='libre',v=null,o='h',ocr=null,espejo=false,doc=false;
+ if(tipo==='documento'||grupo==='documentos'||/^documentos_/.test(id)){doc=true;o='v';g=/contrato|factura|escritura/.test(det+id)?'hoja':'tarjeta';if(/matr[ií]cula.*(frontal|frente)|matricula_frontal/.test(det+' '+id))ocr='matricula';}
+ else if(tipo==='franja'){g='franja';ocr=/vin|chasis|serie|plaqueta/.test(det+id+feeds)?'vin':/motor/.test(det+id+feeds)?'motor':/kil[oó]metr|od[oó]metro/.test(det+id+feeds)?'km':/placa/.test(det+id)?'placa':null;}
+ else if(tipo==='silueta'){g='silueta';if(/fr(ente|ontal)/.test(det+id)){v='frente';ocr='placa';}else if(/posterior/.test(det+id)){v='posterior';ocr='placa';}else if(/lateral/.test(det+id)){v='lateral';espejo=/izquierd/.test(det+id);}else g='libre';}
  return {id,n,g,v,o,ocr,espejo,doc,grupo:p.group||''};}
 function aplicarPlantillas(cf){try{const P=(cf&&cf.plantillas)||{};const pres=x=>(x.pasos||[]).filter(p=>p.req&&p.req.P);
  const ver=x=>parseFloat(String(x.version||'0').replace(',','.'))||0;
  // De las versiones de cada plantilla se usa la vigente: la marcada como vigente o, si no hay marca, la de versión mayor.
- const ultima=re=>{const c=Object.entries(P).filter(([k,x])=>re.test(k)||re.test(x.nombre||''));if(!c.length)return null;const vig=c.filter(([k,x])=>x.vigente===true||x.estado==='Vigente');return (vig.length?vig:c).sort((a,b)=>ver(b[1])-ver(a[1]))[0];};
+ // Solo la versión «Vigente» (C2-12). Si los datos aún no traen estado (configuración antigua), la de versión mayor; nunca un borrador.
+ const ultima=re=>{const c=Object.entries(P).filter(([k,x])=>re.test(k)||re.test(x.nombre||''));if(!c.length)return null;const vig=c.filter(([k,x])=>x.estado==='Vigente'||x.vigente===true);if(vig.length)return vig.sort((a,b)=>ver(b[1])-ver(a[1]))[0];const sinEstado=c.filter(([k,x])=>!x.estado);return sinEstado.length?sinEstado.sort((a,b)=>ver(b[1])-ver(a[1]))[0]:null;};
  const vl=ultima(/veh[ií]culos livianos/i),mo=ultima(/^motos/i);
- if(vl&&pres(vl[1]).length){PLANT.auto.pasos=pres(vl[1]).map(pasoDesdePlantilla);PLANT.auto.nombre=(vl[1].nombre||vl[0])+' · Presencial';PLANT_INFO.auto={nombre:(vl[1].nombre||vl[0])+' · Presencial',version:String(vl[1].version||cf.version||'')};}
- if(mo&&pres(mo[1]).length){PLANT.moto.pasos=pres(mo[1]).map(pasoDesdePlantilla);PLANT.moto.nombre=(mo[1].nombre||mo[0])+' · Presencial';PLANT_INFO.moto={nombre:(mo[1].nombre||mo[0])+' · Presencial',version:String(mo[1].version||cf.version||'')};}
+ if(vl&&pres(vl[1]).length){PLANT.auto.pasos=pres(vl[1]).map(pasoDesdePlantilla);PLANT.auto.nombre=(vl[1].nombre||vl[0])+' · Presencial';PLANT_INFO.auto={nombre:(vl[1].nombre||vl[0])+' · Presencial',version:String(vl[1].version||cf.version||''),mapa:vl[1].mapa||null};}
+ if(mo&&pres(mo[1]).length){PLANT.moto.pasos=pres(mo[1]).map(pasoDesdePlantilla);PLANT.moto.nombre=(mo[1].nombre||mo[0])+' · Presencial';PLANT_INFO.moto={nombre:(mo[1].nombre||mo[0])+' · Presencial',version:String(mo[1].version||cf.version||''),mapa:mo[1].mapa||null};}
  S.plantCache=cf;}catch(e){console.warn('plantillas',e);}}
 const TIPOV={sedan:'Sedán o hatchback',suv:'SUV o Jeep',camioneta:'Camioneta',moto:'Moto'};
 const plantDe=v=>PLANT[v.carro==='moto'?'moto':'auto'];
@@ -257,12 +255,15 @@ yo(){const P=PF(),m=S.mes;let fin='';
 // Mapa de captura: vista superior del vehículo con los puntos de las fotos exteriores, el siguiente paso al centro y la lista completa a pedido.
 const POS={frente:[1,.5],lat_izq:[.5,0],posterior:[0,.5],lat_der:[.5,1],parabrisas:[.66,.5],motor:[.86,.5],exteriores_frontal:[1,.5],exteriores_posterior:[0,.5],exteriores_parabrisas:[.7,.5],exteriores_lateral_izquierdo_de_ade:[.68,0],exteriores_lateral_izquierdo_de_atr:[.32,0],exteriores_lateral_derecho_de_ade:[.68,1],exteriores_lateral_derecho_de_atr:[.32,1],motor_habitaculo_del_motor:[.88,.5]};
 function anillo(h,t){const r=24,c=2*Math.PI*r,f=t?h/t:0;return '<svg class="ring" viewBox="0 0 58 58"><circle cx="29" cy="29" r="'+r+'" fill="none" stroke="#e3e9f0" stroke-width="6"/><circle cx="29" cy="29" r="'+r+'" fill="none" stroke="#16a34a" stroke-width="6" stroke-linecap="round" stroke-dasharray="'+(c*f)+' '+c+'" transform="rotate(-90 29 29)"/><text x="29" y="33" text-anchor="middle" font-family="Mulish" font-weight="900" font-size="13" fill="#0f1b2d">'+h+'/'+t+'</text></svg>';}
-function mapaCaptura(v,P,hechas,tot,sig){const geo=GEO[v.carro]||GEO.sedan,ext=P.filter(p=>POS[p.id]),resto=P.filter(p=>!POS[p.id]&&!p.doc),docs=P.filter(p=>p.doc);
+// Mapa publicado en Formularios (C2-15 · DEC-190): la base entrega por carrocería la caja de la vista superior y la posición de cada paso
+// (ya resuelta: lo movido, lo sugerido por la biblioteca y sin lo quitado del dibujo). Sin mapa publicado se usan las posiciones fijas de siempre.
+function mapaPosDe(v){const M=((PLANT_INFO[v.carro==='moto'?'moto':'auto']||{}).mapa||{})[v.carro];if(!M||!M.pos||!Array.isArray(M.vb))return null;const w=M.vb[2]||1,hh=M.vb[3]||1,o={};Object.keys(M.pos).forEach(k=>{const q=M.pos[k];if(Array.isArray(q))o[k]=[Math.max(0,Math.min(1,q[0]/w)),Math.max(0,Math.min(1,q[1]/hh))];});return o;}
+function mapaCaptura(v,P,hechas,tot,sig){const geo=GEO[v.carro]||GEO.sedan,MP=mapaPosDe(v),posDe=p=>p.doc?null:MP?(MP[p.id]||null):(POS[p.id]||null),ext=P.filter(p=>posDe(p)),resto=P.filter(p=>!posDe(p)&&!p.doc),docs=P.filter(p=>p.doc);
  let h='<div class="cap"><div class="capTop">'+anillo(hechas,tot)+'<div><b>'+(hechas<tot?'Fotos y documentos':'Captura completa')+'</b><div class="mut sm">'+plantDe(v).nombre+' · v'+(PLANT_INFO[v.carro==='moto'?'moto':'auto'].version||'')+'</div></div></div>';
- h+='<div class="vmap">'+geo.icono.replace('<svg ','<svg class="ic" ')+ext.map(p=>{const q=POS[p.id],ok=v.fotos[p.id],s2=sig&&sig.id===p.id;return '<button class="vpt '+(ok?'ok':s2?'sig':'')+'" style="left:'+(q[0]*100)+'%;top:'+(q[1]*100)+'%" onclick="camara(\''+p.id+'\')" aria-label="'+p.n+(ok?', tomada':'')+'">'+(ok?'✓':P.indexOf(p)+1)+'</button>';}).join('')+'</div>';
+ h+='<div class="vmap">'+geo.icono.replace('<svg ','<svg class="ic" ')+ext.map(p=>{const q=posDe(p),ok=v.fotos[p.id],s2=sig&&sig.id===p.id;return '<button class="vpt '+(ok?'ok':s2?'sig':'')+'" style="left:'+(q[0]*100)+'%;top:'+(q[1]*100)+'%" onclick="camara(\''+p.id+'\')" aria-label="'+p.n+(ok?', tomada':'')+'">'+(ok?'✓':P.indexOf(p)+1)+'</button>';}).join('')+'</div>';
  if(sig)h+='<button class="nextBtn" onclick="camara(\''+sig.id+'\')"><span class="ph">'+ic(sig.doc?'doc':'cam')+'</span><span><small>Siguiente · paso '+(P.indexOf(sig)+1)+' de '+tot+'</small><b>'+sig.n+'</b></span></button>';
  h+='<details class="grupo" '+(v.verPasos?'open':'')+' ontoggle="VA().verPasos=this.open;guardar()"><summary class="btn3" style="list-style:none">'+ic('grid')+'Ver todos los pasos</summary>'+
-  [['Exterior',ext],['Interior y detalles',resto],['Documentos',docs]].map(([t,arr])=>arr.length?'<h3>'+t+'</h3><div class="pasos">'+arr.map(p=>{const ok=v.fotos[p.id];return '<button class="paso '+(ok?'ok':sig&&sig.id===p.id?'sig':'')+'" onclick="camara(\''+p.id+'\')"><span class="ic">'+(ok&&ok.mini?'<img src="'+ok.mini+'" alt="">':ic(ok?'check':p.doc?'doc':'cam'))+'</span>'+p.n+'</button>';}).join('')+'</div>':'').join('')+'</details></div>';
+  [[MP?'En el mapa':'Exterior',ext],[MP?'Sin punto en el mapa':'Interior y detalles',resto],['Documentos',docs]].map(([t,arr])=>arr.length?'<h3>'+t+'</h3><div class="pasos">'+arr.map(p=>{const ok=v.fotos[p.id];return '<button class="paso '+(ok?'ok':sig&&sig.id===p.id?'sig':'')+'" onclick="camara(\''+p.id+'\')"><span class="ic">'+(ok&&ok.mini?'<img src="'+ok.mini+'" alt="">':ic(ok?'check':p.doc?'doc':'cam'))+'</span>'+p.n+'</button>';}).join('')+'</div>':'').join('')+'</details></div>';
  return h;}
 function est(v){return v.st==='term'?'<span class="chip c-p">Informe por completar</span>':v.st==='dev'?'<span class="chip c-x">Devuelto</span>':v.st==='env'?'<span class="chip c-a">Enviada</span>':v.st==='cola'?'<span class="chip c-p">Por sincronizar</span>':v.st==='cur'?'<span class="chip c-r">En curso</span>':'<span class="chip c-p">Pendiente</span>';}
 const VA=()=>S.vis.find(v=>v.id===S.vi);
