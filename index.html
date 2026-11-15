@@ -142,11 +142,13 @@ async function cargarDatos(silencioso){if(MODO!=='prueba')return;try{
  let EST={};try{const e=await SB.rpc('inspector_estado_visitas');EST=e.data||{};}catch(e){}
  try{const cf=await SB.rpc('configuracion_vigente',{p_claves:['SIRIUS_CATALOGOS_MAESTROS']});catDesdeConfig(cf.data&&cf.data.SIRIUS_CATALOGOS_MAESTROS);S.catCache=cf.data&&cf.data.SIRIUS_CATALOGOS_MAESTROS;}catch(e){if(S.catCache)catDesdeConfig(S.catCache);}
  try{const pl=await SB.rpc('plantillas_vigentes');if(pl.data&&pl.data.plantillas)aplicarPlantillas(pl.data);}catch(e){if(S.plantCache)aplicarPlantillas(S.plantCache);}
- const {data:vs,error}=await SB.from('visitas').select('id,estado,inicio,fin,direccion,llegada,caso_id,casos(numero,grupo_ramo,asegurado)').eq('inspector_id',YO.id).order('inicio');if(error)throw error;
- const ids=[...new Set(vs.map(v=>v.caso_id))];const rs=ids.length?((await SB.from('riesgos').select('caso_id,descripcion,datos,suma_asegurada').in('caso_id',ids)).data||[]):[];
+ const {data:vs,error}=await SB.from('visitas').select('id,estado,inicio,fin,direccion,lugar,riesgo_ids,llegada,caso_id,casos(numero,grupo_ramo,asegurado)').eq('inspector_id',YO.id).neq('estado','Cancelada').order('inicio');if(error)throw error;   /* G-3a: sin las visitas canceladas */
+ const ids=[...new Set(vs.map(v=>v.caso_id))];const rs=ids.length?((await SB.from('riesgos').select('id,caso_id,descripcion,datos,suma_asegurada,creado').in('caso_id',ids).order('creado')).data||[]):[];
  const prev=Object.fromEntries((S.vis||[]).map(v=>[v.id,v]));
- S.vis=vs.map(v=>{const r=rs.find(x=>x.caso_id===v.caso_id)||{datos:{}},ini=v.inicio?new Date(v.inicio):null,d=v.direccion||{},p=prev[v.id]||{},ct=((v.casos.asegurado||{}).contacto)||{};
-  const base={id:v.id,casoId:v.caso_id,caso:String(v.casos.numero),h:ini?p2(ini.getHours())+':'+p2(ini.getMinutes()):'—',fecha:v.inicio||null,dur:ini&&v.fin?Math.round((new Date(v.fin)-ini)/60000):45,bien:r.descripcion||'Riesgo',
+ S.vis=vs.map(v=>{const rv=rs.filter(x=>x.caso_id===v.caso_id&&Array.isArray(v.riesgo_ids)&&v.riesgo_ids.indexOf(x.id)>=0),rsV=rv.length?rv:rs.filter(x=>x.caso_id===v.caso_id),r=rsV[0]||{datos:{}},ini=v.inicio?new Date(v.inicio):null,lg=v.lugar||{},pt=Array.isArray(lg.punto)?lg.punto:null,d=Object.assign({},v.direccion||{}),p=prev[v.id]||{},ct=((v.casos.asegurado||{}).contacto)||{};
+  if(!d.direccion&&lg.direccion){d.direccion=lg.direccion;if(!d.referencia)d.referencia=lg.referencia;}if(d.lat==null&&pt){d.lat=pt[0];d.lng=pt[1];}   /* G-3a: dirección y punto desde el lugar de la visita */
+  const bienes=rsV.map(x=>({desc:x.descripcion||'Riesgo',placa:x.datos&&x.datos.placa||''}));
+  const base={id:v.id,casoId:v.caso_id,caso:String(v.casos.numero),h:ini?p2(ini.getHours())+':'+p2(ini.getMinutes()):'—',fecha:v.inicio||null,dur:ini&&v.fin?Math.round((new Date(v.fin)-ini)/60000):45,bien:bienes.length>1?bienes.length+' vehículos · '+bienes.map(b=>b.placa||b.desc).join(', '):(r.descripcion||'Riesgo'),bienes,
    carro:p.carro||(r.datos&&r.datos.carroceria)||'sedan',placa:r.datos&&r.datos.placa,anio:r.datos&&r.datos.anio?String(r.datos.anio):'',marca:r.datos&&r.datos.marca||'',modelo:r.datos&&r.datos.modelo||'',dir:d.direccion||'Dirección por confirmar',contacto:d.quien||ct.nombre||'Contacto',
    cel:d.cel||ct.celular||'',lat:+(d.lat||-0.1902),lng:+(d.lng||-78.4842),grupo:v.casos.grupo_ramo};
   const ex=(EST||{})[v.id]||{},ce=ex.casoEstado;const st=p.st==='cola'?'cola':ce==='Informe por completar'?'term':ce==='Devuelto al inspector'?(p.st==='cur'?'cur':'dev'):(v.estado==='Terminada'||v.estado==='Enviada')?'env':(ESTV[v.estado]||'pend');
@@ -161,6 +163,7 @@ async function cargarDatos(silencioso){if(MODO!=='prueba')return;try{
    bienes:Array.isArray(o.bienes)?o.bienes:[],desde:o.desde,hasta:o.hasta,dur:Math.round(o.minutos||45),nota:o.nota||'',coord:o.coordinador||'',
    seg:Math.max(0,Math.round((new Date(o.vence)-Date.now())/1000)),dist:(o.lat!=null&&o.lng!=null)?distOferta(o.lat,o.lng):'',nueva:!antesD.has(o.id)}));
   if(S.dirSel&&!S.dirigidas.some(o=>o.id===S.dirSel)){S.dirSel=null;S.dirHoras=null;S.dirHora=null;}
+  const idsD=new Set(S.dirigidas.map(o=>o.id)),fueron=[...antesD].filter(x=>!idsD.has(x));if(fueron.length&&!S.dirAcepte)toast(fueron.length===1?'Una oferta del coordinador ya no está disponible: la tomó otro inspector o se retiró':fueron.length+' ofertas del coordinador ya no están disponibles');S.dirAcepte=false;
   if(!silencioso&&S.dirigidas.some(o=>!antesD.has(o.id))){sonar();toast('Nueva oferta del coordinador');}}catch(e){S.dirigidas=S.dirigidas||[];}
  if(!silencioso&&S.ofertas.some(o=>!antes.has(o.id))){sonar();toast('Nueva oferta en tu zona');}
  guardar();pintar();docsCliente();}catch(e){if(!silencioso)toast('No se pudo leer SIRIUS: '+(e.message||e));}}
@@ -267,6 +270,7 @@ visitas(){const pc=S.vis.filter(v=>v.st==='term'&&puedeCompletar(v)),dv=S.vis.fi
  return (pc.length?'<h2>Informes por completar</h2>'+pc.map(fila).join(''):'')+(dv.length?'<h2>Devueltos</h2>'+dv.map(fila).join(''):'')+'<h1>Mis visitas</h1>'+S.vis.map((v,i)=>'<button class="vis" onclick="abrir(\''+v.id+'\')"><span class="n">'+(i+1)+'</span><div><b>'+v.h+' · '+esc(v.bien)+'</b><small>Caso '+v.caso+'</small></div>'+est(v)+'</button>').join('');},
 visita(){const v=VA();if(!v)return V.visitas();
  let h='<button class="btn3" onclick="ir(\'hoy\',\'hoy\')">'+ic('left')+'Hoy</button><h1>'+esc(v.bien)+'</h1><p class="mut sm">Caso '+v.caso+' · '+v.h+' ('+v.dur+' min) · '+esc(v.dir)+'<br>Contacto en sitio: '+esc(v.contacto)+'</p>'+
+  (v.bienes&&v.bienes.length>1?'<div class="card" style="margin:10px 0"><b>Esta visita incluye '+v.bienes.length+' vehículos</b><p class="sm" style="margin:6px 0">'+v.bienes.map((b,k)=>(k+1)+'. '+esc(b.desc)).join('<br>')+'</p><p class="mut sm" style="margin:0">Por ahora la captura guiada es la del primero; la captura de cada vehículo llega en una etapa siguiente. Anota lo de los demás en las observaciones.</p></div>':'')+
   '<div class="acts"><a class="act" href="tel:'+v.cel+'"><span>'+ic('phone')+'</span>Llamar</a><button class="act" onclick="camino()"'+(v.enCamino?' aria-pressed="true" style="color:var(--ok)"':'')+'><span>'+ic(v.enCamino?'check':'car')+'</span>'+(v.enCamino?'En camino':'Voy en camino')+'</button><a class="act go" target="_blank" rel="noopener" href="'+nav(v)+'"><span>'+ic('nav')+'</span>Navegar</a></div>';
  if(v.st==='pend')return h+'<button class="big" onclick="llegar()">'+ic('pin')+'Llegué: iniciar la visita</button><p class="mut sm">Se registra la hora y tu ubicación; debes estar a menos de '+CFG.radio+' m.</p>'+prueba();
  if(v.st==='term'||v.st==='dev')return h+estadoInforme(v)+prueba();
@@ -399,7 +403,7 @@ async function aceptarDir(i){const o=(S.dirigidas||[])[i];if(!o||!S.dirHora)retu
  const {data,error}=await SB.rpc('tomar_oferta_dirigida',{p_oferta:o.id,p_inicio:k+':00-05:00'});
  if(error){toast(error.message);return;}const r=data||{};
  if(!r.ok){toast(r.mensaje||'No se pudo aceptar');S.dirSel=null;S.dirHora=null;await cargarDatos(true);return;}
- S.dirSel=null;S.dirHora=null;S.dirHoras=null;toast((r.mensaje||'¡Cita asignada!')+(r.direccion?' · '+r.direccion:''));await cargarDatos(true);}
+ S.dirSel=null;S.dirHora=null;S.dirHoras=null;S.dirAcepte=true;toast((r.mensaje||'¡Cita asignada!')+(r.direccion?' · '+r.direccion:''));await cargarDatos(true);}
 function noPuedoDir(i){const o=(S.dirigidas||[])[i];if(!o)return;S.dirigidas.splice(i,1);if(S.dirSel===o.id){S.dirSel=null;S.dirHora=null;S.dirHoras=null;}guardar();pintar();toast('Oferta descartada');}
 // ====== Cámara guiada ======
 // El video ocupa la pantalla tal como está; la capa de la interfaz (guía, mensajes, botones y revisión) gira para quedar derecha
