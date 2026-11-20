@@ -160,7 +160,7 @@ async function cargarDatos(silencioso){if(MODO!=='prueba')return;try{
  /* G-3a · ofertas dirigidas del Coordinador (SQL 42): rango de fechas, el inspector elige la hora */
  try{const {data:od}=await SB.rpc('ofertas_dirigidas');const antesD=new Set((S.dirigidas||[]).map(o=>o.id));
   S.dirigidas=(od||[]).map(o=>({id:o.id,caso:String(o.caso),tipo:(o.grupo||'Inspección')+' · '+String(o.modalidad||'presencial').toLowerCase(),ciudad:o.ciudad||'',zona:o.zona||'',
-   bienes:Array.isArray(o.bienes)?o.bienes:[],desde:o.desde,hasta:o.hasta,dur:Math.round(o.minutos||45),nota:o.nota||'',coord:o.coordinador||'',
+   bienes:Array.isArray(o.bienes)?o.bienes:[],desde:o.desde,hasta:o.hasta,dur:Math.round(o.minutos||45),nota:o.nota||'',coord:o.coordinador||'',hora:o.hora||'',porCliente:!!o.porCliente,
    seg:Math.max(0,Math.round((new Date(o.vence)-Date.now())/1000)),dist:(o.lat!=null&&o.lng!=null)?distOferta(o.lat,o.lng):'',nueva:!antesD.has(o.id)}));
   if(S.dirSel&&!S.dirigidas.some(o=>o.id===S.dirSel)){S.dirSel=null;S.dirHoras=null;S.dirHora=null;}
   const idsD=new Set(S.dirigidas.map(o=>o.id)),fueron=[...antesD].filter(x=>!idsD.has(x));if(fueron.length&&!S.dirAcepte)toast(fueron.length===1?'Una oferta del coordinador ya no está disponible: la tomó otro inspector o se retiró':fueron.length+' ofertas del coordinador ya no están disponibles');S.dirAcepte=false;
@@ -428,9 +428,9 @@ function vNoVeh(v){const b=v.bienes.find(x=>x.id===v.vehSel)||{},n=Object.keys(v
 // ====== G-3a · Ofertas dirigidas del Coordinador ======
 const fDM=d=>{const x=String(d||'').split('-');return x.length===3?x[2]+'/'+x[1]:d;};
 function vDirigidas(){const L=S.dirigidas||[];if(!L.length)return '';
- return '<h1>Ofertas del coordinador</h1><p class="mut sm">Te las envía Coordinación. Elige una hora libre dentro del rango; la primera persona que acepta queda asignada.</p>'+L.map((o,i)=>{const sel=S.dirSel===o.id,H=sel?S.dirHoras:null;
+ return '<h1>Ofertas del coordinador</h1><p class="mut sm">Te las envía Coordinación o las pide el cliente desde su portal. Elige la hora (o acepta la que pidió el cliente); la primera persona que acepta queda asignada.</p>'+L.map((o,i)=>{const sel=S.dirSel===o.id,H=sel?S.dirHoras:null;
   return '<div class="oferta '+(o.nueva?'nueva':'')+'"><div class="top"><b>'+esc(o.tipo)+' · caso '+esc(o.caso)+'</b><span class="t" id="od'+i+'">⏱ '+Math.floor(o.seg/3600)+' h '+p2(Math.floor(o.seg%3600/60))+' min</span></div>'+
-  '<div class="g2" style="margin:8px 0"><div><small class="mut">Cuándo</small><b>'+(o.desde===o.hasta?'El '+fDM(o.desde):'Del '+fDM(o.desde)+' al '+fDM(o.hasta))+'</b><small class="mut">'+o.dur+' min · tú eliges la hora</small></div>'+
+  '<div class="g2" style="margin:8px 0"><div><small class="mut">Cuándo</small><b>'+(o.desde===o.hasta?'El '+fDM(o.desde):'Del '+fDM(o.desde)+' al '+fDM(o.hasta))+'</b><small class="mut">'+o.dur+' min · '+(o.hora?'a las '+esc(o.hora)+' (la pidió el cliente)':'tú eliges la hora')+'</small></div>'+
   '<div><small class="mut">Dónde</small><b>'+esc(o.ciudad+(o.zona?' · '+o.zona:''))+'</b><small class="mut">'+(o.dist&&o.dist.indexOf('calcular')<0?'aprox. '+o.dist+' · ':'')+'dirección al aceptar</small></div>'+
   '<div><small class="mut">'+(o.bienes.length>1?o.bienes.length+' bienes':'Bien')+'</small><b>'+esc(o.bienes.join(', ')||'—')+'</b></div><div><small class="mut">Envía</small><b>'+esc(o.coord||'Coordinación')+'</b></div></div>'+
   (o.nota?'<p class="sm" style="margin:0 0 8px">«'+esc(o.nota)+'»</p>':'')+
