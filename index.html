@@ -2,6 +2,12 @@
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#101010">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SIRIUS Inspector">
+<link rel="apple-touch-icon" href="icono-180.png">
 <title>SIRIUS Inspector · Aseguradora del Sur</title>
 <link href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -456,10 +462,10 @@ function noPuedoDir(i){const o=(S.dirigidas||[])[i];if(!o)return;S.dirigidas.spl
 // El video ocupa la pantalla tal como está; la capa de la interfaz (guía, mensajes, botones y revisión) gira para quedar derecha
 // según la posición física del celular, tenga o no el bloqueo de rotación. Solo importa si el celular está horizontal o vertical:
 // la inclinación hacia arriba o abajo (apuntar al vehículo) no bloquea.
-const IOS=/iPhone|iPad|iPod/.test(navigator.userAgent);let grav=null,fis=0,movi=0;
+const IOS=/iPhone|iPad|iPod/.test(navigator.userAgent);let grav=null,fis=0,movi=0,fisVisto=false;
 addEventListener('devicemotion',e=>{const g=e.accelerationIncludingGravity;if(g&&g.x!=null){const k=IOS?-1:1;grav={x:g.x*k,y:g.y*k};const ax=Math.abs(grav.x),ay=Math.abs(grav.y);
  if(ax>ay*1.35&&ax>3)fis=grav.x>0?90:270;else if(ay>ax*1.35&&ay>3)fis=grav.y>0?0:180;}const a=e.acceleration;if(a&&a.x!=null)movi=Math.hypot(a.x,a.y,a.z);});
-addEventListener('deviceorientation',e=>{if(grav||e.gamma==null)return;const g=e.gamma;if(Math.abs(g)>55)fis=g<0?90:270;else if(Math.abs(g)<35)fis=0;});
+addEventListener('deviceorientation',e=>{if(grav||e.gamma==null)return;fisVisto=true;const g=e.gamma;if(Math.abs(g)>55)fis=g<0?90:270;else if(Math.abs(g)<35)fis=0;});
 async function sensores(){try{if(window.DeviceMotionEvent&&DeviceMotionEvent.requestPermission)await DeviceMotionEvent.requestPermission();if(window.DeviceOrientationEvent&&DeviceOrientationEvent.requestPermission)await DeviceOrientationEvent.requestPermission();}catch(e){}}
 const angPantalla=()=>{const a=screen.orientation&&screen.orientation.angle!=null?screen.orientation.angle:(window.orientation||0);return ((a%360)+360)%360;};
 const fisH=()=>(grav||fis)?(fis===90||fis===270):innerWidth>innerHeight;
@@ -471,14 +477,14 @@ function caja(p,W,H){const v=VA(),geo=GEO[v.carro]||GEO.sedan;if(p.g==='silueta'
 let camAbierta=false;
 function camara(pid){const v=VA(),p=v&&plantDe(v).pasos.find(x=>x.id===pid),d=v&&(v.docsCli||{})[pid],dec=v&&(v.docDec||{})[pid],f=v&&v.fotos[pid];
  if(p&&p.doc&&d&&dec!=='nueva'&&(!f||f.cliente))return hojaDocCliente(p,d,!!(f&&f.cliente));return camaraFoto(pid);}
-async function camaraFoto(pid){if(camAbierta)return;camAbierta=true;const v=VA(),p=plantDe(v).pasos.find(x=>x.id===pid);audioOn();sensores();if(p.g==='silueta')cargarDetector();
- const div=document.createElement('div');div.className='cam';div.innerHTML='<video playsinline muted autoplay></video><div class="ov'+(p.o==='v'?' v':'')+'"><canvas class="mask"></canvas><svg class="cont"></svg><div class="det" id="det"></div><div class="cTop"><button class="cBack" id="cx">‹ Volver</button><b>'+esc(p.n)+'</b><span></span></div><div class="cMsg" id="cmsg">Abriendo la cámara…</div><div class="cChips" id="cch"></div><button class="cShot" id="csh" aria-label="Tomar la foto" disabled></button><button class="cIgual" id="cig" hidden>Tomar igual</button><div class="cRot" id="crot" hidden><div class="ph">📱</div><b id="crt"></b></div><div class="revL" id="rev" hidden></div></div>';
+async function camaraFoto(pid){if(camAbierta)return;camAbierta=true;const v=VA(),p=plantDe(v).pasos.find(x=>x.id===pid);audioOn();sensores();pantallaCompletaAndroid();giroEn(p.o==='h'?'camara-h':'camara-v');if(p.g==='silueta')cargarDetector();
+ const div=document.createElement('div');div.className='cam';div.innerHTML='<video playsinline muted autoplay></video><div class="ov'+(p.o==='v'?' v':'')+'"><canvas class="mask"></canvas><svg class="cont"></svg><div class="det" id="det"></div><div class="cTop"><button class="cBack" id="cx">‹ Volver</button><b>'+esc(p.n)+'</b><span></span></div><div class="cMsg" id="cmsg">Abriendo la cámara…</div><div class="cChips" id="cch"></div><button class="cShot" id="csh" aria-label="Tomar la foto" disabled></button><button class="cIgual" id="cig" hidden>Tomar igual</button><div class="cRot" id="crot" hidden><div class="ph">📱</div><b id="crt"></b><span id="crs" style="font-size:13px;font-weight:600;opacity:.85;max-width:420px"></span></div><div class="revL" id="rev" hidden></div></div>';
  document.body.appendChild(div);const video=div.querySelector('video'),ov=div.querySelector('.ov'),mask=div.querySelector('.mask'),svg=div.querySelector('svg.cont');let stream=null,loop=null,t0=Date.now(),detOc=false,ult=null,rot=-1,pausa=false;
- const cerrar=()=>{cancelAnimationFrame(loop);if(stream)stream.getTracks().forEach(t=>t.stop());div.remove();camAbierta=false;};div.querySelector('#cx').onclick=cerrar;
- try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});video.srcObject=stream;await video.play();}catch(e){cerrar();return sistema(p);}
+ const cerrar=()=>{cancelAnimationFrame(loop);if(stream)stream.getTracks().forEach(t=>t.stop());div.remove();camAbierta=false;giroEn('pantalla');};div.querySelector('#cx').onclick=cerrar;
+ try{stream=await pedirCamara({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});video.srcObject=stream;await video.play();}catch(e){cerrar();return sistema(p);}
  const off=document.createElement('canvas'),ox=off.getContext('2d',{willReadFrequently:true});
  // Giro de la capa: diferencia entre la posición física y la de la pantalla (0, 90 o 270).
- function girar(){const SW=innerWidth,SH=innerHeight;let r=fisH()||p.o==='v'?((fis-angPantalla())%360+360)%360:0;if(p.o==='v'&&(r===90||r===270))r=0;if(r===180)r=0;
+ function girar(){const SW=innerWidth,SH=innerHeight;let r=(grav||fisVisto)&&(fisH()||p.o==='v')?((fis-angPantalla())%360+360)%360:0;   /* 24/11/2026 · A-2: sin lectura de los sensores, se confía en la pantalla (antes giraba 270° con la pantalla ya horizontal) */if(p.o==='v'&&(r===90||r===270))r=0;if(r===180)r=0;
   if(r!==rot){rot=r;if(r===0)Object.assign(ov.style,{width:SW+'px',height:SH+'px',transform:'none'});else if(r===90)Object.assign(ov.style,{width:SH+'px',height:SW+'px',transform:'translate('+SW+'px,0) rotate(90deg)'});else Object.assign(ov.style,{width:SH+'px',height:SW+'px',transform:'translate(0,'+SH+'px) rotate(-90deg)'});}}
  const dimOv=()=>rot?{W:innerHeight,H:innerWidth}:{W:innerWidth,H:innerHeight};
  // Conversión entre la capa (u,v) y la pantalla (x,y).
@@ -496,7 +502,7 @@ async function camaraFoto(pid){if(camAbierta)return;camAbierta=true;const v=VA()
   const b=Math.max(3,Math.round(h*.12)),bd=(ys,ye,xs,xe,hz)=>{let c2=0,t=0;for(let y=ys;y<ye;y++)for(let x=xs;x<xe;x++){const q=y*w+x;if((hz?Math.abs(Y[q+w]-Y[q-w]):Math.abs(Y[q+1]-Y[q-1]))>28)c2++;t++;}return c2/t;};
   return {media:s/(w*h),sat:sat/(w*h),lap:l/n,bordes:e/n,lados:p.g==='tarjeta'?[bd(1,b,4,w-4,1),bd(h-b,h-1,4,w-4,1),bd(4,h-4,1,b,0),bd(4,h-4,w-b,w-1,0)].filter(x=>x>.05).length:0};}
  function tick(){if(pausa){loop=requestAnimationFrame(tick);return;}girar();const M=vmap();if(!M){loop=requestAnimationFrame(tick);return;}const {W,H}=dimOv(),g=caja(p,W,H),oriOk=p.o==='h'?fisH():!fisH();
-  div.querySelector('#crot').hidden=oriOk;div.querySelector('#crt').textContent=p.o==='h'?'Gira el celular a horizontal':'Pon el celular en vertical';
+  div.querySelector('#crot').hidden=oriOk;div.querySelector('#crt').textContent=p.o==='h'?'Gira el celular a horizontal':'Pon el celular en vertical';div.querySelector('#crs').textContent=(IOS&&p.o==='h'&&!(grav||fisVisto))?'Si no cambia, quita el bloqueo de rotación en el Centro de control (esquina superior derecha, el candado) o permite el acceso a movimiento y orientación.':'';
   const m=medir(g),E={ori:[oriOk,''],luz:[m.media>60&&m.media<220,m.media<=60?'Busca más luz':'Hay demasiada luz'],nit:[m.lap>65&&movi<1.6,'Mantén el celular quieto']};
   if(p.g==='tarjeta'){E.enc=[m.lados>=3,'Alinea los bordes con el marco'];E.ref=[m.sat<.06,'Hay un reflejo: inclina un poco'];}
   else if(p.g==='silueta'){if(detector&&!detOc&&video.readyState>=2){detOc=true;detector.detect(video,5,.35).then(rs=>{detOc=false;const c=rs.filter(o=>['car','truck','bus','motorcycle'].includes(o.class)).sort((a,b)=>b.bbox[2]*b.bbox[3]-a.bbox[2]*a.bbox[3])[0];ult=c?c.bbox:null;}).catch(()=>detOc=false);}
@@ -577,4 +583,45 @@ setInterval(()=>{if(!S.ofertas.length)return;S.ofertas.forEach(o=>o.seg=Math.max
 // Una oferta de demostración llega sola a los 45 s de desbloquear (con sonido y vibración).
 setTimeout(()=>{if(MODO==='demo'&&S.recibir&&!S.bloq)llegaOferta();},45000);
 arranque();
-</script></body></html>
+</script><script>
+// ===== 24/11/2026 · Giro y pantallas: la misma estrategia validada en la autoinspección =====
+// Pantallas siempre verticales; fotos horizontales en horizontal. Android: control único con pantalla completa (las pantallas se fijan en vertical
+// y la cámara se pone horizontal cuando los sensores lo detectan); la capa girada de la cámara se mantiene para iPhone y como respaldo.
+const ES_IPHONE=/iPhone|iPod/.test(navigator.userAgent);
+const ES_ANDROID_MOVIL=/Android/i.test(navigator.userAgent)&&Math.min(screen.width,screen.height)<700;
+// A-4 · iPhone: Safari no reajusta el zoom ni el texto al girar
+if(ES_IPHONE){const vp=document.querySelector('meta[name="viewport"]');if(vp&&vp.content.indexOf('maximum-scale')<0)vp.content=vp.content+', maximum-scale=1';document.documentElement.style.webkitTextSizeAdjust='100%';}
+// A-3 · abrir la cámara: si falla por algo que no es el permiso, se espera y se reintenta; luego sin exigir resolución
+async function pedirCamara(c){try{return await navigator.mediaDevices.getUserMedia(c);}catch(e){if(e&&(e.name==='NotAllowedError'||e.name==='SecurityError'))throw e;await new Promise(r=>setTimeout(r,700));
+  try{return await navigator.mediaDevices.getUserMedia(c);}catch(e2){if(e2&&(e2.name==='NotAllowedError'||e2.name==='SecurityError'))throw e2;await new Promise(r=>setTimeout(r,400));return await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});}}}
+// A-5 · Android: control único del giro (un pedido a la vez; cancelaciones y errores de seguridad no detienen el control; se repite a los 1,5 s)
+let giroModo='pantalla',giroPedido=null,giroPedidoEn=0,giroNoSoporta=false;
+function giroAndroid(){return ES_ANDROID_MOVIL&&!!document.fullscreenElement&&!!(screen.orientation&&screen.orientation.lock);}
+function giroFisico(){if(!(grav||fisVisto))return null;return (fis===90||fis===270)?'landscape':'portrait';}
+function giroDeseado(){if(giroModo!=='camara-h')return 'portrait';return giroFisico()||giroPedido||'portrait';}
+function sincronizarGiro(){if(!giroAndroid()||giroNoSoporta)return;const d=giroDeseado(),actual=(screen.orientation.type||'').indexOf('landscape')===0?'landscape':'portrait';
+  if(giroPedido===d&&(actual===d||Date.now()-giroPedidoEn<1500))return;giroPedido=d;giroPedidoEn=Date.now();
+  screen.orientation.lock(d).catch(e=>{if(e&&e.name==='NotSupportedError')giroNoSoporta=true;});}
+function giroEn(m){giroModo=m;giroNoSoporta=false;sincronizarGiro();}
+setInterval(sincronizarGiro,300);
+function pantallaCompletaAndroid(){if(!ES_ANDROID_MOVIL||document.fullscreenElement||!document.documentElement.requestFullscreen)return;document.documentElement.requestFullscreen({navigationUI:'hide'}).then(()=>sincronizarGiro()).catch(()=>{});}
+document.addEventListener('click',e=>{if(e.target&&e.target.closest&&e.target.closest('button'))pantallaCompletaAndroid();},true);   // desde el primer toque (el teclado del PIN)
+// A-1 · iPhone y Android: si una pantalla se ve horizontal (fuera de la cámara) más de 0,4 s, se oscurece y se pide enderezar el celular
+if(ES_IPHONE||ES_ANDROID_MOVIL){let horDesde=0;
+  const pintarEnderezar=()=>{const hor=innerWidth>innerHeight&&!document.querySelector('.cam');if(!hor)horDesde=0;else if(!horDesde)horDesde=Date.now();
+    let el=document.getElementById('enderezar');
+    if(!el&&document.body){el=document.createElement('div');el.id='enderezar';el.setAttribute('role','alert');
+      el.innerHTML='<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="20" y="6" width="24" height="44" rx="4" fill="none" stroke="#fff" stroke-width="3"/><circle cx="32" cy="43" r="2" fill="#fff"/></svg><span>Pon el celular en vertical</span><span style="font-weight:600;font-size:14px">Las fotos que lo piden se toman en horizontal; el resto, en vertical</span>';
+      if(ES_ANDROID_MOVIL)el.addEventListener('click',()=>pantallaCompletaAndroid());   // Android: tocar el aviso activa la pantalla completa y fija la vertical
+      document.body.appendChild(el);}
+    document.documentElement.classList.toggle('enderezar',hor&&Date.now()-horDesde>400);if(hor&&Date.now()-horDesde<=400)setTimeout(pintarEnderezar,450);};
+  addEventListener('resize',()=>setTimeout(pintarEnderezar,60));addEventListener('orientationchange',()=>setTimeout(pintarEnderezar,250));
+  const vigilar=()=>{if(document.body)new MutationObserver(()=>pintarEnderezar()).observe(document.body,{childList:true});else setTimeout(vigilar,50);};vigilar();
+  if(document.readyState==='loading')addEventListener('DOMContentLoaded',pintarEnderezar);else pintarEnderezar();setInterval(pintarEnderezar,700);}
+</script>
+<style>
+#enderezar{position:fixed;inset:0;z-index:80;background:rgba(8,14,22,.94);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:24px;font:800 18px Mulish,Arial,sans-serif}
+#enderezar svg{width:84px;height:84px;animation:enderezar 1.6s ease-in-out infinite}@keyframes enderezar{0%,20%{transform:rotate(-90deg)}60%,100%{transform:rotate(0)}}
+html.enderezar #enderezar{display:flex}
+</style>
+</body></html>
