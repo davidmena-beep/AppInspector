@@ -135,7 +135,8 @@ const PF=()=>PERFILES[S.perfil];
 // ====== Prueba de concepto (fase P): conexión a la base de datos ======
 // Con sesión iniciada la app trabaja en modo prueba contra SIRIUS; sin sesión, en modo demostración.
 const CONEX={url:'https://qdciqoxselwmudlycprq.supabase.co',key:'sb_publishable_pUrNhusonmxflSItZlU0fQ_ohRpCrYW'};
-const SB=window.supabase?window.supabase.createClient(CONEX.url,CONEX.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
+const SKEY='sirius-inspector-auth';   /* 24/11/2026 · C-2: sesión propia del inspector (las apps del sitio comparten almacenamiento; antes se pisaba con la del Back-office) */
+const SB=window.supabase?window.supabase.createClient(CONEX.url,CONEX.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey:SKEY}}):null;
 let MODO='demo',YO=null,AG=null;const uid=()=>(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(16).slice(2));
 const ESTV={'Agendada':'pend','En camino':'pend','En curso':'cur','Por sincronizar':'cola','Enviada':'env'};
 async function cargarYo(user){const {data,error}=await SB.from('usuarios').select('*').eq('auth_id',user.id).maybeSingle();if(error||!data)return null;YO=data;
@@ -199,16 +200,22 @@ function pantallaIngreso(msg){const d=document.createElement('div');d.className=
  '<input id="ingClave" type="password" autocomplete="current-password" placeholder="contraseña" style="width:min(86vw,340px);padding:13px;border-radius:12px;border:0;font-size:16px"><button class="btn" id="ingPass" style="width:min(86vw,340px)">Ingresar</button><button class="btn3" id="ingEnv" style="color:#ffffffc0">Prefiero recibir un enlace en mi correo</button><div id="ingCod" hidden style="width:min(86vw,340px)"><input id="ingTok" inputmode="numeric" placeholder="código de 6 dígitos" style="width:100%;padding:13px;border-radius:12px;border:0;font-size:18px;text-align:center;letter-spacing:4px"><button class="btn" id="ingVer">Ingresar</button></div>'+
  '<button class="btn3" id="ingDemo" style="color:#ffffffb0">Ver la demostración sin cuenta</button>';document.body.appendChild(d);
  d.querySelector('#ingDemo').onclick=()=>{S.modoDemo=true;guardar();d.remove();pintar();bloqueo();};
- d.querySelector('#ingPass').onclick=async()=>{const m=d.querySelector('#ingMail').value.trim().toLowerCase(),k=d.querySelector('#ingClave').value;if(!m||!k){toast('Escribe tu correo y tu contraseña');return;}
-  const {error}=await SB.auth.signInWithPassword({email:m,password:k});if(error){toast(/Invalid login/i.test(error.message)?'Correo o contraseña incorrectos':'No se pudo ingresar: '+error.message);return;}location.reload();};
+ d.querySelector('#ingPass').onclick=async()=>{const b=d.querySelector('#ingPass'),m=d.querySelector('#ingMail').value.trim().toLowerCase(),k=d.querySelector('#ingClave').value;if(!m||!k){toast('Escribe tu correo y tu contraseña');return;}
+   if(!espacioOk()){avisoEspacio(d);return;}   /* C-3: sin espacio para guardar la sesión */
+   const t0=b.textContent;b.disabled=true;b.textContent='Ingresando…';let res;
+   try{res=await Promise.race([SB.auth.signInWithPassword({email:m,password:k}),new Promise(r=>setTimeout(()=>r({error:{message:'__tiempo'}}),20000))]);}catch(e){res={error:{message:String(e&&e.message||e)}};}
+   b.disabled=false;b.textContent=t0;const error=res&&res.error;
+   if(error){if(error.message==='__tiempo')toast('No hubo respuesta. Revisa tu conexión e intenta de nuevo');else if(/quota|storage|exceed/i.test(error.message))avisoEspacio(d);else toast(/Invalid login/i.test(error.message)?'Correo o contraseña incorrectos':'No se pudo ingresar: '+error.message);return;}
+   if(!localStorage.getItem(SKEY)){avisoEspacio(d);return;}   /* C-3: la base aceptó, pero la sesión no quedó guardada en el celular */
+   try{sessionStorage.setItem('sirius-ingreso',String(Date.now()));}catch(e){}location.reload();};
  d.querySelector('#ingClave').addEventListener('keydown',e=>{if(e.key==='Enter')d.querySelector('#ingPass').click();});
  d.querySelector('#ingEnv').onclick=async()=>{const m=d.querySelector('#ingMail').value.trim().toLowerCase();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m)){toast('Escribe un correo válido');return;}
   const {error}=await SB.auth.signInWithOtp({email:m,options:{emailRedirectTo:location.origin+location.pathname}});if(error){toast(/rate limit/i.test(error.message)?'Se alcanzó el límite de correos por hora: usa tu contraseña':'No se pudo enviar: '+error.message);return;}S.ingMail=m;guardar();d.querySelector('#ingCod').hidden=false;toast('Revisa tu correo: abre el enlace o escribe el código');};
  d.querySelector('#ingVer').onclick=async()=>{const t=d.querySelector('#ingTok').value.trim();const {error}=await SB.auth.verifyOtp({email:S.ingMail||d.querySelector('#ingMail').value.trim(),token:t,type:'email'});if(error){toast('Código no válido: '+error.message);return;}location.reload();};}
 async function arranque(){if(!SB){pintar();bloqueo();sync();return;}const {data:{session}}=await SB.auth.getSession();
- if(session){MODO='prueba';const y=await cargarYo(session.user);if(!y){pintar();pantallaIngreso('Tu correo '+session.user.email+' no está habilitado como inspector en SIRIUS. Pide la invitación al Administrador.');await SB.auth.signOut();return;}
+ if(session){MODO='prueba';try{sessionStorage.removeItem('sirius-ingreso');}catch(e){}const y=await cargarYo(session.user);if(!y){pintar();pantallaIngreso('Tu correo '+session.user.email+' no está habilitado como inspector en SIRIUS. Pide la invitación al Administrador.');await SB.auth.signOut();return;}
   if(!S.prueba){S.vis=[];S.ofertas=[];S.cola=[];S.prueba=true;S.mes={visitas:0,aprob:0,porAprob:0,pagado:0};}pintar();bloqueo();await cargarDatos(true);sync();setInterval(()=>{if(enLinea())cargarDatos(false);},20000);return;}
- if(S.modoDemo){pintar();bloqueo();sync();return;}pintar();pantallaIngreso();}
+ if(S.modoDemo){pintar();bloqueo();sync();return;}let ing=0;try{ing=+sessionStorage.getItem('sirius-ingreso')||0;sessionStorage.removeItem('sirius-ingreso');}catch(e){}pintar();pantallaIngreso();if(Date.now()-ing<60000){const d=document.getElementById('ingreso');if(d)avisoEspacio(d);}}
 
 const guardar=()=>{try{localStorage.setItem(CLAVE,JSON.stringify(S))}catch(e){toast('Memoria del navegador llena')}};
 // ====== Fotos en el celular (IndexedDB) ======
@@ -624,4 +631,21 @@ if(ES_IPHONE||ES_ANDROID_MOVIL){let horDesde=0;
 #enderezar svg{width:84px;height:84px;animation:enderezar 1.6s ease-in-out infinite}@keyframes enderezar{0%,20%{transform:rotate(-90deg)}60%,100%{transform:rotate(0)}}
 html.enderezar #enderezar{display:flex}
 </style>
+<script>
+// ===== 24/11/2026 · C-3: espacio del navegador para la sesión =====
+// Las apps del sitio comparten unos 5 MB de almacenamiento. Si está lleno, la sesión no se puede guardar: se avisa y se ofrece liberar espacio
+// borrando o aligerando SOLO los avances de autoinspección guardados en este navegador (nunca los datos ni las fotos del inspector).
+function espacioOk(){try{localStorage.setItem('sirius-prueba-espacio','x'.repeat(16384));localStorage.removeItem('sirius-prueba-espacio');return true;}catch(e){try{localStorage.removeItem('sirius-prueba-espacio');}catch(e2){}return false;}}
+function liberarEspacio(){let lib=0;const claves=[];try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.indexOf('sirius-auto')===0)claves.push(k);}}catch(e){return 0;}
+  claves.forEach(k=>{const v=localStorage.getItem(k)||'';let o=null;try{o=JSON.parse(v);}catch(e){return;}if(!o||typeof o!=='object'||!o.fotos)return;
+    if(o.enviado){localStorage.removeItem(k);lib+=v.length;return;}const f={};Object.keys(o.fotos).forEach(id=>{const x=o.fotos[id];f[id]=x&&x.mini&&x.src&&x.src!==x.mini?Object.assign({},x,{src:x.mini}):x;});
+    const t=JSON.stringify(Object.assign({},o,{fotos:f}));if(t.length<v.length){try{localStorage.setItem(k,t);lib+=v.length-t.length;}catch(e){}}});
+  if(!espacioOk()){claves.forEach(k=>{try{const v=localStorage.getItem(k);if(v){localStorage.removeItem(k);lib+=v.length;}}catch(e){}});}   // aún sin espacio: se borran los avances de autoinspección
+  return lib;}
+function avisoEspacio(d){let a=d.querySelector('#ingEsp');if(!a){a=document.createElement('div');a.id='ingEsp';a.style.cssText='width:min(86vw,340px);background:#fff3df;color:#5b3d00;border-radius:12px;padding:12px;font-size:14px;line-height:1.4;text-align:left';
+    const b=d.querySelector('#ingPass');if(b&&b.parentNode)b.parentNode.insertBefore(a,b.nextSibling);else d.appendChild(a);}
+  a.innerHTML='<b>No se pudo guardar tu sesión en este celular.</b><br>El espacio del navegador para SIRIUS está lleno (suele ocuparlo una autoinspección hecha en este mismo celular).<button class="btn" id="ingLib" style="width:100%;margin-top:10px">Liberar espacio</button>';
+  a.querySelector('#ingLib').onclick=()=>{const lib=liberarEspacio();if(espacioOk()){a.innerHTML='<b>Listo: se liberó espacio'+(lib>0?' ('+Math.max(1,Math.round(lib*2/1024/1024))+' MB aprox.)':'')+'.</b><br>Vuelve a tocar «Ingresar».';}
+    else{a.innerHTML='<b>Sigue sin espacio.</b><br>En Chrome: toca el ícono a la izquierda de la dirección › Configuración del sitio › Borrar y restablecer. Antes, sincroniza lo pendiente.';}};}
+</script>
 </body></html>
