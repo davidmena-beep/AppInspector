@@ -1,14 +1,7 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<style>/* 23/11/2026 · iPhone: al girar, Safari no reajusta el zoom ni agranda el texto (evita el salto al volver a vertical) */html{-webkit-text-size-adjust:100%;text-size-adjust:100%}html,body{overflow-x:hidden}</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#101010">
-<link rel="manifest" href="manifest.webmanifest">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="SIRIUS Inspector">
-<link rel="apple-touch-icon" href="icono-180.png">
 <title>SIRIUS Inspector · Aseguradora del Sur</title>
 <link href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -463,10 +456,10 @@ function noPuedoDir(i){const o=(S.dirigidas||[])[i];if(!o)return;S.dirigidas.spl
 // El video ocupa la pantalla tal como está; la capa de la interfaz (guía, mensajes, botones y revisión) gira para quedar derecha
 // según la posición física del celular, tenga o no el bloqueo de rotación. Solo importa si el celular está horizontal o vertical:
 // la inclinación hacia arriba o abajo (apuntar al vehículo) no bloquea.
-const IOS=/iPhone|iPad|iPod/.test(navigator.userAgent);let grav=null,fis=0,movi=0,fisVisto=false;
+const IOS=/iPhone|iPad|iPod/.test(navigator.userAgent);let grav=null,fis=0,movi=0;
 addEventListener('devicemotion',e=>{const g=e.accelerationIncludingGravity;if(g&&g.x!=null){const k=IOS?-1:1;grav={x:g.x*k,y:g.y*k};const ax=Math.abs(grav.x),ay=Math.abs(grav.y);
  if(ax>ay*1.35&&ax>3)fis=grav.x>0?90:270;else if(ay>ax*1.35&&ay>3)fis=grav.y>0?0:180;}const a=e.acceleration;if(a&&a.x!=null)movi=Math.hypot(a.x,a.y,a.z);});
-addEventListener('deviceorientation',e=>{if(grav||e.gamma==null)return;fisVisto=true;const g=e.gamma;if(Math.abs(g)>55)fis=g<0?90:270;else if(Math.abs(g)<35)fis=0;});
+addEventListener('deviceorientation',e=>{if(grav||e.gamma==null)return;const g=e.gamma;if(Math.abs(g)>55)fis=g<0?90:270;else if(Math.abs(g)<35)fis=0;});
 async function sensores(){try{if(window.DeviceMotionEvent&&DeviceMotionEvent.requestPermission)await DeviceMotionEvent.requestPermission();if(window.DeviceOrientationEvent&&DeviceOrientationEvent.requestPermission)await DeviceOrientationEvent.requestPermission();}catch(e){}}
 const angPantalla=()=>{const a=screen.orientation&&screen.orientation.angle!=null?screen.orientation.angle:(window.orientation||0);return ((a%360)+360)%360;};
 const fisH=()=>(grav||fis)?(fis===90||fis===270):innerWidth>innerHeight;
@@ -485,7 +478,7 @@ async function camaraFoto(pid){if(camAbierta)return;camAbierta=true;const v=VA()
  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});video.srcObject=stream;await video.play();}catch(e){cerrar();return sistema(p);}
  const off=document.createElement('canvas'),ox=off.getContext('2d',{willReadFrequently:true});
  // Giro de la capa: diferencia entre la posición física y la de la pantalla (0, 90 o 270).
- function girar(){const SW=innerWidth,SH=innerHeight;let r=(grav||fisVisto)&&(fisH()||p.o==='v')?((fis-angPantalla())%360+360)%360:0;   /* 23/11/2026: sin lectura de los sensores, se confía en la pantalla (antes giraba 270° en horizontal) */if(p.o==='v'&&(r===90||r===270))r=0;if(r===180)r=0;
+ function girar(){const SW=innerWidth,SH=innerHeight;let r=fisH()||p.o==='v'?((fis-angPantalla())%360+360)%360:0;if(p.o==='v'&&(r===90||r===270))r=0;if(r===180)r=0;
   if(r!==rot){rot=r;if(r===0)Object.assign(ov.style,{width:SW+'px',height:SH+'px',transform:'none'});else if(r===90)Object.assign(ov.style,{width:SH+'px',height:SW+'px',transform:'translate('+SW+'px,0) rotate(90deg)'});else Object.assign(ov.style,{width:SH+'px',height:SW+'px',transform:'translate(0,'+SH+'px) rotate(-90deg)'});}}
  const dimOv=()=>rot?{W:innerHeight,H:innerWidth}:{W:innerWidth,H:innerHeight};
  // Conversión entre la capa (u,v) y la pantalla (x,y).
@@ -493,7 +486,7 @@ async function camaraFoto(pid){if(camAbierta)return;camAbierta=true;const v=VA()
  const aCapa=b=>{const SW=innerWidth,SH=innerHeight;if(rot===90)return {x:b.y,y:SW-b.x-b.w,w:b.h,h:b.w};if(rot===270)return {x:SH-b.y-b.h,y:b.x,w:b.h,h:b.w};return b;};
  const vmap=()=>{const SW=innerWidth,SH=innerHeight,vw=video.videoWidth,vh=video.videoHeight;if(!vw)return null;const s=Math.max(SW/vw,SH/vh);return {s,ox:(SW-vw*s)/2,oy:(SH-vh*s)/2};};
  function marco(g,ok){const {W,H}=dimOv();mask.width=W;mask.height=H;const m=mask.getContext('2d');if(p.g==='silueta'){m.clearRect(0,0,W,H);const geo=GEO[v.carro]||GEO.sedan,cb=geo.cajas[p.v],vb=geo.vbs[p.v],cx=p.espejo?[vb[2]-cb[0]-cb[2],cb[1],cb[2],cb[3]]:cb;Object.assign(svg.style,{left:g.x+'px',top:g.y+'px',width:g.w+'px',height:g.h+'px'});svg.setAttribute('viewBox',cx.join(' '));svg.setAttribute('preserveAspectRatio','xMidYMid meet');const path='<path d="'+geo.contorno[p.v]+'" fill="none" stroke="'+(ok?'#3ddc97':'#fff')+'" stroke-width="2.6" stroke-dasharray="7 5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';svg.innerHTML=p.espejo?'<g transform="translate('+vb[2]+',0) scale(-1,1)">'+path+'</g>':path;return;}
-  svg.innerHTML='';m.clearRect(0,0,W,H);m.strokeStyle=ok?'#3ddc97':'#fff';m.lineWidth=3;if(p.g==='tarjeta'){m.fillStyle='rgba(0,0,0,.55)';m.fillRect(0,0,W,H);m.clearRect(g.x,g.y,g.w,g.h);m.setLineDash(ok?[]:[10,7]);m.strokeRect(g.x,g.y,g.w,g.h);m.setLineDash([]);return;}if(p.g==='franja'){m.setLineDash(ok?[]:[10,7]);m.strokeRect(g.x,g.y,g.w,g.h);m.setLineDash([]);}const q=Math.min(W,H)*.07,e=14;m.lineWidth=4;[[e,e,1,1],[W-e,e,-1,1],[e,H-e,1,-1],[W-e,H-e,-1,-1]].forEach(([x,y,a,b])=>{m.beginPath();m.moveTo(x,y+b*q);m.lineTo(x,y);m.lineTo(x+a*q,y);m.stroke();});}
+  svg.innerHTML='';m.fillStyle='rgba(0,0,0,.55)';m.fillRect(0,0,W,H);m.clearRect(g.x,g.y,g.w,g.h);m.strokeStyle=ok?'#3ddc97':'#fff';m.lineWidth=3;m.setLineDash(ok?[]:[10,7]);m.strokeRect(g.x,g.y,g.w,g.h);m.setLineDash([]);}
  // Recorte del video correspondiente a la guía, ya enderezado según el giro de la capa.
  function recorte(g,N){const M=vmap(),sb=aPant(g),sx=(sb.x-M.ox)/M.s,sy=(sb.y-M.oy)/M.s,sw=sb.w/M.s,sh=sb.h/M.s,k=N?N/(rot?sh:sw):Math.min(1,1600/(rot?sh:sw));const c=document.createElement('canvas');
   if(!rot){c.width=Math.round(sw*k);c.height=Math.round(sh*k);c.getContext('2d').drawImage(video,sx,sy,sw,sh,0,0,c.width,c.height);return c;}
@@ -510,14 +503,14 @@ async function camaraFoto(pid){if(camAbierta)return;camAbierta=true;const v=VA()
    const dv=div.querySelector('#det');if(detEst!=='listo'){E.enc=[false,detEst==='no disponible'?'No pudimos verificar el encuadre':'Preparando la detección…'];dv.style.display='none';}
    else if(!ult){E.enc=[false,'No vemos el vehículo'];dv.style.display='none';}
    else{const [bx,by,bw,bh]=ult,d=aCapa({x:bx*M.s+M.ox,y:by*M.s+M.oy,w:bw*M.s,h:bh*M.s});Object.assign(dv.style,{display:'block',left:d.x+'px',top:d.y+'px',width:d.w+'px',height:d.h+'px'});const rw=d.w/g.w,o1=Math.abs(d.x+d.w/2-(g.x+g.w/2))/g.w,o2=Math.abs(d.y+d.h/2-(g.y+g.h/2))/g.h;E.enc=rw<.72?[false,'Acércate un poco']:rw>1.12?[false,'Aléjate un paso']:(o1>.12||o2>.18)?[false,'Centra el vehículo en el contorno']:[true,''];dv.style.borderColor=E.enc[0]?'#3ddc97':'#ffd166';}}
-  else E.enc=[m.bordes>.05,p.g==='franja'?'Centra el número en la franja':'Acércate: el componente debe verse con detalle'];
+  else E.enc=[m.bordes>.05,'Centra lo que fotografías en el marco'];
   const ok=Object.values(E).every(x=>x[0]);marco(g,ok);const nom={ori:p.o==='h'?'Horizontal':'Vertical',luz:'Luz',nit:'Nitidez',enc:'Encuadre',ref:'Reflejo'};
   div.querySelector('#cch').innerHTML=Object.entries(E).map(([k,x])=>'<span class="'+(x[0]?'k':'w')+'">'+(x[0]?'✓':'!')+' '+nom[k]+'</span>').join('');
   const malo=Object.entries(E).find(([k,x])=>!x[0]);const cm=div.querySelector('#cmsg');cm.textContent=malo?(malo[0]==='ori'?(p.o==='h'?'Gira el celular a horizontal':'Pon el celular en vertical'):malo[1][1]):'Listo: toma la foto';cm.className='cMsg'+(ok?' ok':'');
   div.querySelector('#csh').disabled=!ok;div.querySelector('#cig').hidden=ok||!oriOk||Date.now()-t0<6000;loop=requestAnimationFrame(tick);}
  loop=requestAnimationFrame(tick);
  // La revisión se muestra dentro de la misma capa (sigue la posición del celular) y «Repetir» vuelve a la cámara sin reabrirla.
- const disparar=f=>{if(!vmap())return;const {W,H}=dimOv(),c=recorte(p.g==='tarjeta'?caja(p,W,H):{x:0,y:0,w:W,h:H}),val=f?'Tomada igual':'Validada en el celular';pausa=true;const url=c.toDataURL('image/jpeg',.82),rv=div.querySelector('#rev');rv.hidden=false;
+ const disparar=f=>{if(!vmap())return;const {W,H}=dimOv(),c=recorte(caja(p,W,H)),val=f?'Tomada igual':'Validada en el celular';pausa=true;const url=c.toDataURL('image/jpeg',.82),rv=div.querySelector('#rev');rv.hidden=false;
   rv.innerHTML='<div class="revImg"><img src="'+url+'" alt="Foto tomada"></div><div class="revAct"><button class="btn btn2" id="rno" style="background:transparent;color:#fff;border-color:#fff8;margin:0">Repetir</button><button class="btn" id="rok" style="margin:0">Usar esta foto</button></div>';
   rv.querySelector('#rno').onclick=()=>{rv.hidden=true;rv.innerHTML='';pausa=false;t0=Date.now();};
   rv.querySelector('#rok').onclick=async()=>{cerrar();await guardarFoto(p,c,url,val);};};
