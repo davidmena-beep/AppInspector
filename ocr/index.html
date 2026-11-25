@@ -46,7 +46,7 @@ pre{white-space:pre-wrap;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;bac
     <div class="fila">
       <select id="tipo" aria-label="Qué se lee">
         <option value="auto">Automático</option><option value="placa">Placa</option><option value="km">Kilometraje</option>
-        <option value="vin">VIN / chasis</option><option value="matricula">Matrícula (cualquier lado)</option>
+        <option value="vin">VIN / chasis</option><option value="matricula">Matrícula (cualquier lado)</option><option value="licencia">Licencia de conducir (cualquier lado)</option>
       </select>
       <label class="btn" for="camara">📷 Tomar foto</label>
       <input id="camara" type="file" accept="image/*" capture="environment" hidden>
@@ -197,7 +197,7 @@ const NOMBRES = { placa: 'Placa', vin: 'VIN (chasis)', motor: 'Motor', marca: 'M
 const TODAS = new Set(Object.values(SIN).flatMap(([a, b]) => a.concat(b)).concat(['ANO', 'PLACAANTERIOR', 'TONELADAS', 'CARROCERIA', 'CARR', 'TIPODEPESO', 'COLOR2', 'ORTOPEDICO', 'REMARCADO', 'OBSERVACIONES', 'DOMICILIO', 'DIRECCION', 'TELEFONO', 'DISCO', 'AVALUO', 'VALORMATRICULA', 'FECHACOMPRA', 'DIGITADOR', 'LUGAREMISION', 'FIRMARESPONSABLE', 'OPERADORDETRANSPORTE', 'AMBITODEOPERACION', 'TON', 'TO', 'REMCHAIMOT', 'PA', 'OPERADORADETRANSPORTE', 'AMBITO']));
 const esEti = (t) => { const n = N(t); return TODAS.has(n) || [...TODAS].some(e => e.length >= 5 && n.startsWith(e) && n.length <= e.length + 3); };
 const MESES = { ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6, JUL: 7, AGO: 8, SEP: 9, OCT: 10, NOV: 11, DIC: 12 };
-function aFecha(n) { const m = n.match(/^(\d{1,2})([A-Z]{3})(\d{4})$/) || n.match(/^(\d{2})(\d{2})(\d{4})$/) || n.match(/^(\d{2})(\d{2})(\d{2})$/); if (!m) return null;
+function aFecha(n) { const m = n.match(/^(\d{1,2})([A-Z]{3})(\d{4}|\d{2})$/) || n.match(/^(\d{2})(\d{2})(\d{4})$/) || n.match(/^(\d{2})(\d{2})(\d{2})$/); if (!m) return null;
   let [, d, mo, y] = m; mo = /\d/.test(mo) ? +mo : MESES[mo]; y = +y + (y.length === 2 ? 2000 : 0); if (!mo || y < 1990 || y > 2040) return null; const f = new Date(y, mo - 1, +d); return isNaN(f) ? null : f; }
 function cedulaOk(c) { if (!/^\d{10}$/.test(c)) return false; const p = +c.slice(0, 2); if (!((p >= 1 && p <= 24) || p === 30) || +c[2] > 5) return false; let s = 0;
   for (let i = 0; i < 9; i++) { let v = +c[i] * (i % 2 === 0 ? 2 : 1); if (v > 9) v -= 9; s += v; } return (10 - s % 10) % 10 === +c[9]; }
@@ -230,19 +230,82 @@ function leerMatricula(cs) {
   return { lado, sal };
 }
 
+// ===================== Licencia de conducir (formato ANT: nuevo y anterior) =====================
+// Datos: titular (apellidos y nombres), identificación (número de licencia = cédula), categoría y vigencia.
+const CATS = ['A1', 'A', 'B', 'C1', 'C', 'D1', 'D', 'E1', 'E', 'F', 'G'];
+function bajo(cs, e, valida) {   // texto más cercano debajo de la etiqueta, en su columna, que cumpla la validación
+  const h = e.y1 - e.y0; return cs.filter(c => c !== e && !esEti(c.t) && !/[\/]/.test(c.t.replace(/\d+\/\d+\/\d+/, '')) || false)
+    .filter(c => c !== e && c.y0 >= e.y0 + 0.5 * h && c.y0 - e.y1 < 3.5 * h && (Math.min(e.x1, c.x1) - Math.max(e.x0, c.x0) > -0.2 * (e.x1 - e.x0) || Math.abs(c.x0 - e.x0) < 2.5 * h))
+    .sort((a, b) => (a.y0 - e.y1) - (b.y0 - e.y1)).find(c => valida(c.t)); }
+const letras = (t) => /^[A-ZÑÁÉÍÓÚ ]{3,}$/.test(t.toUpperCase().trim()) && !/FAMILY|NAME|SURNAME|APELLIDO|NOMBRE|LICENCIA|SEXO|CATEG/.test(N(t));
+const fechaTxt = (t) => { const m = t.toUpperCase().match(/(\d{1,2})[-\/. ]?(\d{2}|[A-Z]{3})[-\/. ]?(\d{2,4})/); return m ? aFecha(m[1] + m[2] + m[3]) : null; };
+function leerLicencia(cs) {
+  const T = (c) => c.t.toUpperCase(), sal = {}, todo = cs.map(c => N(c.t)).join('|');
+  const reverso = ['PARTICULAR', 'COMERCIAL', 'ESTATAL', 'PASAJEROS', 'ESPECIAL', 'PESADO', 'DISCAPAC', 'AGRC', 'ESCTURISMO'].filter(w => todo.includes(w)).length >= 3;
+  // --- reverso: fila de la tabla de categorías con fechas (la categoría vigente) ---
+  const filas = [];
+  cs.forEach(c => { const f = fechaTxt(c.t); if (!f || /\d{4}/.test(c.t.replace(/[^\d]/g, '').slice(0, 0))) return; const cy = (c.y0 + c.y1) / 2, h = c.y1 - c.y0;
+    let fila = filas.find(r => Math.abs(r.cy - cy) < 0.9 * Math.max(h, r.h)); if (!fila) { fila = { cy, h, fechas: [] }; filas.push(fila); } fila.fechas.push({ f, c }); });
+  const conCat = filas.map(r => { const cod = cs.filter(c => CATS.includes(N(c.t)) && Math.abs((c.y0 + c.y1) / 2 - r.cy) < 0.9 * Math.max(r.h, c.y1 - c.y0) && c.x1 <= Math.min(...r.fechas.map(z => z.c.x0)) + 5)
+      .sort((a, b) => a.x0 - b.x0)[0]; return cod ? { cat: N(cod.t), hasta: r.fechas.map(z => z.f).sort((a, b) => b - a)[0], txt: r.fechas.map(z => z.c.t).join(' · ') } : null; }).filter(Boolean);
+  if (reverso && conCat.length) { const tabla = conCat.filter(r => r.hasta); sal.categoria = { valor: tabla.map(r => r.cat).join(', '), conf: 90, nota: 'fila de la tabla con fechas' };
+    const v = tabla.sort((a, b) => b.hasta - a.hasta)[0]; sal.vigencia = { valor: v.hasta.toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' }), conf: 90, nota: 'válida hasta (categoría ' + v.cat + ')' }; }
+  if (!reverso) {
+    // --- formato nuevo: etiquetas bilingües ---
+    const et = (re) => cs.find(c => re.test(N(c.t)));
+    const eA = et(/FAMILY|^APEL|LLIDO/), eN = et(/^NOMBRE(NAME)?$|^NOMBRENAME/), eL = et(/^LICENCIA(NUMBER)?$|LICENCIANUMBER/), eC = et(/^CATEGORIA|^CATEGORY/), eV = et(/VENCIMIENTO|^FECHAVENC|EXP$/);
+    const vA = eA && bajo(cs, eA, letras), vN = eN && bajo(cs, eN, letras);
+    if (vA || vN) sal.titular = { valor: [vA && vA.t, vN && vN.t].filter(Boolean).join(' '), conf: Math.min(vA ? vA.c : 100, vN ? vN.c : 100), nota: 'apellidos y nombres por su etiqueta' };
+    const vL = eL && bajo(cs, eL, t => /^\d{10}$/.test(N(t))); if (vL) sal.identificacion = { valor: N(vL.t), conf: vL.c, nota: cedulaOk(N(vL.t)) ? 'cédula válida (dígito verificador)' : 'DUDOSO: no pasa el dígito verificador', dudoso: !cedulaOk(N(vL.t)) };
+    const vC = eC && bajo(cs, eC, t => /^(A1|B|C1|D1|E1|A|C|D|E|F|G)([ ,]+(A1|B|C1|D1|E1|A|C|D|E|F|G))*$/.test(t.toUpperCase().trim())); if (vC) sal.categoria = { valor: vC.t.toUpperCase().trim(), conf: vC.c, nota: 'por su etiqueta' };
+    const vV = eV && bajo(cs, eV, t => !!fechaTxt(t)); if (vV) sal.vigencia = { valor: vV.t.trim(), conf: vV.c, nota: 'fecha de vencimiento por su etiqueta' };
+    // --- formato anterior: campos numerados (1. apellidos · 2. nombres · 4b. válido hasta · 8. número) ---
+    if (!sal.titular) { const a = cs.find(c => /^\s*1\s*[.,]\s*[A-ZÑ]/.test(T(c))), n = cs.find(c => /^\s*2\s*[.,]\s*[A-ZÑ]/.test(T(c)));
+      if (a || n) sal.titular = { valor: [a && T(a).replace(/^\s*1\s*[.,]\s*/, ''), n && T(n).replace(/^\s*2\s*[.,]\s*/, '')].filter(Boolean).join(' '), conf: Math.min(a ? a.c : 100, n ? n.c : 100), nota: 'campos 1 y 2 (formato anterior)' }; }
+    if (!sal.vigencia) { const v = cs.find(c => /4\s*B\s*[.,]?\s*\d/.test(T(c))); if (v) { const m = T(v).match(/4\s*B\s*[.,]?\s*([\d][\d\-\/.]{6,})/); if (m && fechaTxt(m[1])) sal.vigencia = { valor: m[1], conf: v.c, nota: 'campo 4b (formato anterior)' }; } }
+    if (!sal.identificacion) { const v = cs.find(c => /^\s*8\s*[.,]?\s*\d{10}$/.test(T(c).replace(/\s/g, '')) && cedulaOk(N(c.t).replace(/^8(?=\d{10}$)/, ''))) || cs.find(c => cedulaOk(N(c.t))); if (v) { const num = N(v.t).replace(/^8(?=\d{10}$)/, ''); sal.identificacion = { valor: num, conf: v.c, nota: cedulaOk(num) ? 'cédula válida (dígito verificador)' : 'DUDOSO: no pasa el dígito verificador', dudoso: !cedulaOk(num) }; } }
+  }
+  if (sal.vigencia) { const f = fechaTxt(sal.vigencia.valor); if (f && f < new Date()) sal.vigencia.alerta = 'LICENCIA VENCIDA'; }
+  if (!reverso && !sal.categoria && sal.titular && /anterior/.test(sal.titular.nota)) sal._catReverso = true;   // formato anterior: la categoría está en el reverso
+  return { lado: reverso ? 'reverso (tabla de categorías)' : 'frente (titular)', sal };
+}
+
+// ===================== Orientación: si la foto está girada, se prueba 90° en cada sentido =====================
+function girar(src, sentido) { const c = document.createElement('canvas'); c.width = src.height; c.height = src.width; const x = c.getContext('2d'); x.translate(c.width / 2, c.height / 2); x.rotate(sentido * Math.PI / 2); x.drawImage(src, -src.width / 2, -src.height / 2); return c; }
+const CLAVE_DOC = /LICENCIA|CONDUCIR|APELLIDO|NOMBRE|CATEGOR|PARTICULAR|COMERCIAL|PASAJEROS|ECUADOR|REPUBLICA|NACIMIENTO|VENCIMIENTO|EMISION|PLACA|MARCA|MODELO|PROPIETARIO|CANTON|PROVINCIA|AGENCIA|TRANSITO/;
+const puntaje = (cs) => cs.reduce((s, c) => s + (CLAVE_DOC.test(N(c.t)) ? 3 : 0) + (fechaTxt(c.t) ? 2 : 0) + c.c / 100, 0);
+async function leerTodo(src) {
+  let cajas = await detectar(src); const vert = cajas.filter(b => b.rot && Math.abs(b.rot.ang) > 0.8 && b.rot.L > 2 * b.rot.A).length, horiz = cajas.filter(b => b.rot && Math.abs(b.rot.ang) <= 0.8 && b.rot.L > 2 * b.rot.A).length;
+  const armar = async (img, cj) => { const tx = await reconocer(img, cj); return cj.map((b, i) => Object.assign({}, b, tx[i])).filter(c => c.c >= REC.minScore * 100 && c.t); };
+  if (vert <= horiz) return { src, cs: await armar(src, cajas), giro: 0 };
+  let mejor = null; for (const s of [1, -1]) { const g = girar(src, s), cj = await detectar(g), muestra = cj.slice().sort((a, b) => b.rot.L - a.rot.L).slice(0, 14), p = puntaje(await armar(g, muestra)); if (!mejor || p > mejor.p) mejor = { src: g, cj, giro: s * 90, p }; }
+  return { src: mejor.src, cs: await armar(mejor.src, mejor.cj), giro: mejor.giro };   // lectura completa solo de la orientación ganadora
+}
+
 // ===================== Interfaz =====================
 let ultima = null; const HIST = [];
 async function procesar(img) {
   if (!detS) return; $('otra').disabled = true; const tipoSel = $('tipo').value;
-  const src = aLienzo(img, DET.maxSide); const t0 = ahora(); const cajas = await detectar(src); const t1 = ahora(); const textos = await reconocer(src, cajas); const t2 = ahora();
-  const cs = cajas.map((b, i) => Object.assign({}, b, textos[i])).filter(c => c.c >= REC.minScore * 100 && c.t);
-  let tipo = tipoSel; if (tipo === 'auto') { const all = cs.map(c => N(c.t)).join('|'); tipo = /PLACAACTUAL|PROPIETARIO|APELLIDOSYNOMBRES|CILINDRAJE/.test(all) ? 'matricula' : (cs.some(c => /KM/i.test(c.t) && /\d{3}/.test(c.t)) ? 'km' : (leerVin(cs) && !leerVin(cs).dudoso ? 'vin' : 'placa')); }
+  const src0 = aLienzo(img, DET.maxSide); const t0 = ahora(); const LT = await leerTodo(src0); const src = LT.src, cs = LT.cs; const t2 = ahora(), t1 = t0 + (t2 - t0) * 0.6;   // detección ≈ 60 % del tiempo
+  const giro = LT.giro;
+  let tipo = tipoSel; if (tipo === 'auto') { const all = cs.map(c => N(c.t)).join('|'); tipo = /LICENCIADECONDUCIR|DRIVERSLICENSE|FAMILYNAME|SURNAME|CATEGORIACATEGORY|PESADO\|.*DISCAPAC|ESCTURISMO/.test(all) ? 'licencia' : /PLACAACTUAL|PROPIETARIO|APELLIDOSYNOMBRES|CILINDRAJE/.test(all) ? 'matricula' : (cs.some(c => /KM/i.test(c.t) && /\d{3}/.test(c.t)) ? 'km' : (leerVin(cs) && !leerVin(cs).dudoso ? 'vin' : 'placa')); }
   let filas = [], extra = '';
   if (tipo === 'matricula') { const m = leerMatricula(cs); extra = 'Lado detectado: <b>' + m.lado + '</b>' + (m.sal._aviso ? ' · <span class="wa">' + m.sal._aviso + '</span>' : '');
     const esperados = m.lado.startsWith('frente') ? ['placa', 'vin', 'motor', 'marca', 'modelo', 'anio_modelo', 'color1', 'clase', 'tipo', 'cilindraje', 'pasajeros', 'combustible', 'pais', 'ramv'] : ['identificacion', 'propietario', 'provincia', 'canton', 'fecha_emision', 'fecha_caduca'];
     const claves = esperados.concat(Object.keys(NOMBRES).filter(k => m.sal[k] && !esperados.includes(k)));
     filas = claves.map(k => [NOMBRES[k], m.sal[k] || null, k]); }
+  else if (tipo === 'licencia') { const m = leerLicencia(cs);
+    if (!m.lado.startsWith('reverso') && !m.sal.categoria) {   // respaldo: la categoría es una letra suelta que el detector puede pasar por alto; se lee el recuadro bajo su etiqueta
+      const e = cs.find(c => /^CATEGORIA|^CATEGORY/.test(N(c.t)));
+      if (e) { const h = e.y1 - e.y0;
+        for (const [ancho, dy, alto] of [[1.5, -0.1, 2.0], [2.0, 0, 2.2], [3.0, 0, 1.7]]) {   // del recuadro más angosto al más ancho
+          const caja = { x0: e.x0 - 0.2 * h, y0: e.y1 + dy * h, x1: e.x0 - 0.2 * h + ancho * h, y1: e.y1 + (dy + alto) * h }; caja.rot = { cx: (caja.x0 + caja.x1) / 2, cy: (caja.y0 + caja.y1) / 2, L: caja.x1 - caja.x0, A: caja.y1 - caja.y0, ang: 0 };
+          const r = (await reconocer(src, [caja]))[0], v = (r.t || '').toUpperCase().replace(/[^A-Z0-9, ]/g, '').trim();
+          if (r.c >= 60 && /^(A1|B|C1|D1|E1|A|C|D|E|F|G)([ ,]+(A1|B|C1|D1|E1|A|C|D|E|F|G))*$/.test(v)) { m.sal.categoria = { valor: v, conf: r.c, nota: 'recuadro bajo su etiqueta' }; break; } } } } extra = 'Lado detectado: <b>' + m.lado + '</b>';
+    const NL = { titular: 'Titular (apellidos y nombres)', identificacion: 'Identificación', categoria: 'Categoría', vigencia: 'Vigente hasta' };
+    const claves = m.lado.startsWith('reverso') ? ['categoria', 'vigencia'] : ['titular', 'identificacion', 'categoria', 'vigencia']; filas = claves.map(k => [NL[k], m.sal[k] || (k === 'categoria' && m.sal._catReverso ? { valor: '—', conf: '', nota: 'en este formato la categoría está en el reverso' } : null), k]); }
   else { const r = tipo === 'placa' ? leerPlaca(cs) : tipo === 'km' ? leerKm(cs) : leerVin(cs); filas = [[{ placa: 'Placa', km: 'Kilometraje', vin: 'VIN' }[tipo], r, tipo]]; }
+  if (giro) extra = (extra ? extra + ' · ' : '') + 'foto girada ' + (giro > 0 ? '90° a la derecha' : '90° a la izquierda') + ': enderezada';
   const tot = Math.round(t2 - t0), det = Math.round(t1 - t0), rec = Math.round(t2 - t1);
   $('tiempos').innerHTML = 'Tipo: <b>' + tipo + '</b> · foto ' + src.width + '×' + src.height + ' · ' + cs.length + ' textos · detección <b>' + det + ' ms</b> · lectura <b>' + rec + ' ms</b> · total <b>' + (tot / 1000).toFixed(2) + ' s</b>' + (extra ? '<br>' + extra : '');
   $('campos').innerHTML = '<table><thead><tr><th>Campo</th><th>Valor leído</th><th>¿Está bien?</th></tr></thead><tbody>' + filas.map(([n, r], i) => '<tr><td>' + n + (r ? '<div class="mu">' + r.conf + ' · <span class="' + (r.dudoso ? 'wa' : '') + '">' + esc(r.nota) + '</span></div>' : '') + '</td>' +
@@ -270,7 +333,7 @@ $('campos').addEventListener('click', (e) => { const b = e.target.closest('butto
   $('cAut').hidden = !ACTUAL.campos.some(x => x.estado === 'incorrecto'); });
 $('campos').addEventListener('input', (e) => { if (e.target.matches('input.real') && ACTUAL) ACTUAL.campos[+e.target.dataset.i].real = e.target.value; });
 // datos personales: se envían enmascarados (la base vuelve a enmascarar)
-const enmascarar = (k, v) => !v ? v : (k === 'identificacion' || k === 'telefono') ? String(v).replace(/\d(?=\d{3})/g, '•') : k === 'propietario' ? String(v).trim().split(/\s+/).map(w => w[0] + '.').join(' ') : v;
+const enmascarar = (k, v) => !v ? v : (k === 'identificacion' || k === 'telefono') ? String(v).replace(/\d(?=\d{3})/g, '•') : (k === 'propietario' || k === 'titular') ? String(v).trim().split(/\s+/).map(w => w[0] + '.').join(' ') : v;
 async function guardarResultado() {
   if (!ACTUAL || ACTUAL.guardado) return; const probador = $('probador').value.trim(), clave = $('clave').value.trim();
   if (!probador || !clave) { $('gEstado').innerHTML = '<span class="er">Escribe tu nombre y la clave de prueba (arriba).</span>'; return; }
@@ -295,7 +358,7 @@ $('verRes').addEventListener('click', async () => { const clave = $('clave').val
     $('res').innerHTML = '<p class="mu">' + data.total + ' pruebas · ' + data.probadores + ' probador(es)</p><table><thead><tr><th>Campo</th><th>Acierto</th><th>Bien</th><th>Mal</th><th>Sin marcar</th></tr></thead><tbody>' + pc + '</tbody></table>' +
       '<p class="mu" style="margin-top:10px">Tiempo promedio por teléfono y tipo</p><table><thead><tr><th>Teléfono</th><th>Tipo</th><th>Pruebas</th><th>Total</th></tr></thead><tbody>' + pd + '</tbody></table>';
   } catch (e) { $('res').innerHTML = '<span class="er">' + esc(e.message || e) + '</span>'; } });
-window.SIRIUS_OCR = { procesar, detectar, reconocer, leerMatricula, leerPlaca, leerKm, leerVin, listo: () => !!detS };   // para pruebas
+window.SIRIUS_OCR = { leerLicencia, leerTodo,  procesar, detectar, reconocer, leerMatricula, leerPlaca, leerKm, leerVin, listo: () => !!detS };   // para pruebas
 iniciar();
 </script>
 </body>
