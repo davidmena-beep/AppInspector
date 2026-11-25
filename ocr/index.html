@@ -14,7 +14,7 @@ main{max-width:760px;margin:0 auto;padding:14px}
 h2{font-size:15px;margin:0 0 8px;color:var(--az)}
 .fila{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 button,select,label.btn{font:inherit;border-radius:10px;border:1px solid var(--bd);padding:10px 14px;background:#fff;color:var(--tx)}
-button.pri,label.btn{background:var(--az);color:#fff;border-color:var(--az);font-weight:600;cursor:pointer}
+button.pri,label.btn{background:var(--az);color:#fff;border-color:var(--az);font-weight:600;cursor:pointer}label.btn.sec{background:#fff;color:var(--az)}
 button:disabled{opacity:.5}
 .mu{color:var(--mu);font-size:13px}
 .ok{color:var(--ok)}.wa{color:var(--wa)}.er{color:var(--er)}
@@ -22,6 +22,9 @@ table{width:100%;border-collapse:collapse;font-size:13.5px}td,th{border-bottom:1
 .lienzo{position:relative;overflow:auto;max-height:70vh;border:1px solid var(--bd);border-radius:8px;background:#000}
 .lienzo canvas{display:block;max-width:100%;height:auto}
 .barra{height:6px;background:var(--bd);border-radius:3px;overflow:hidden}.barra i{display:block;height:100%;width:0;background:var(--az);transition:width .2s}
+.bm{display:flex;gap:6px;flex-wrap:wrap}.bm button{padding:6px 10px;font-size:13px}.bm button.on.si{background:var(--ok);color:#fff;border-color:var(--ok)}.bm button.on.no{background:var(--er);color:#fff;border-color:var(--er)}
+.real{width:100%;margin-top:4px;font:inherit;padding:6px 8px;border:1px solid var(--bd);border-radius:8px}input.t{font:inherit;padding:9px 10px;border:1px solid var(--bd);border-radius:10px;min-width:0;flex:1}
+.aut{background:#fff6e5;border-radius:10px;padding:10px;margin-top:10px;font-size:13.5px}
 pre{white-space:pre-wrap;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--fo);padding:8px;border-radius:8px;max-height:220px;overflow:auto}
 </style>
 </head>
@@ -34,14 +37,21 @@ pre{white-space:pre-wrap;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;bac
     <div class="barra" style="margin-top:8px"><i id="barra"></i></div>
   </div>
   <div class="card">
+    <h2>Probador</h2>
+    <div class="fila"><input class="t" id="probador" placeholder="Tu nombre" autocomplete="name"><input class="t" id="clave" placeholder="Clave de prueba" type="password" autocomplete="off"></div>
+    <p class="mu" style="margin:6px 0 0">Se guardan en este teléfono. La clave la entrega el responsable de la prueba.</p>
+  </div>
+  <div class="card">
     <h2>2 · Foto</h2>
     <div class="fila">
       <select id="tipo" aria-label="Qué se lee">
         <option value="auto">Automático</option><option value="placa">Placa</option><option value="km">Kilometraje</option>
         <option value="vin">VIN / chasis</option><option value="matricula">Matrícula (cualquier lado)</option>
       </select>
-      <label class="btn" for="archivo">Tomar o elegir foto</label>
-      <input id="archivo" type="file" accept="image/*" hidden>
+      <label class="btn" for="camara">📷 Tomar foto</label>
+      <input id="camara" type="file" accept="image/*" capture="environment" hidden>
+      <label class="btn sec" for="galeria">🖼️ Elegir de la galería</label>
+      <input id="galeria" type="file" accept="image/*" hidden>
       <button id="otra" disabled>Medir otra vez</button>
     </div>
     <p class="mu" style="margin:8px 0 0">La foto se procesa en este teléfono. Para comparar con SIRIUS, usa las fotos originales (Supabase › Storage › evidencias).</p>
@@ -52,13 +62,22 @@ pre{white-space:pre-wrap;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;bac
     <div id="campos"></div>
     <div class="lienzo" style="margin-top:10px"><canvas id="lienzo"></canvas></div>
     <details style="margin-top:8px"><summary class="mu">Texto leído (todas las cajas)</summary><pre id="crudo"></pre></details>
+    <div id="cAut" class="aut" hidden><label><input type="checkbox" id="autFoto"> Autorizo guardar esta foto para revisar el error. Puede contener datos personales; se guarda en un espacio privado de SIRIUS, solo para el estudio de lectura.</label></div>
+    <div class="fila" style="margin-top:10px"><button class="pri" id="guardar">Guardar resultado</button><span id="gEstado" class="mu"></span></div>
+    <p class="mu" style="margin:6px 0 0">Marca «Bien» o «Mal» en cada campo. Si está mal, escribe el valor real (opcional). La foto se guarda solo si marcas algún campo «Mal» y lo autorizas.</p>
   </div>
   <div class="card">
     <h2>4 · Mediciones de esta sesión</h2>
     <table><thead><tr><th>#</th><th>Tipo</th><th>Tamaño</th><th>Cajas</th><th>Detección</th><th>Lectura</th><th>Total</th></tr></thead><tbody id="hist"></tbody></table>
     <div class="fila" style="margin-top:8px"><button id="copiar">Copiar resumen</button><span id="copiado" class="mu"></span></div>
   </div>
+  <div class="card">
+    <h2>5 · Resultados de todos los probadores</h2>
+    <button id="verRes">Ver resultados</button>
+    <div id="res" style="margin-top:8px"></div>
+  </div>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <!-- onnxruntime-web 1.30.0 (versión fijada) -->
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.min.js"></script>
 <script>
@@ -220,21 +239,62 @@ async function procesar(img) {
   let tipo = tipoSel; if (tipo === 'auto') { const all = cs.map(c => N(c.t)).join('|'); tipo = /PLACAACTUAL|PROPIETARIO|APELLIDOSYNOMBRES|CILINDRAJE/.test(all) ? 'matricula' : (cs.some(c => /KM/i.test(c.t) && /\d{3}/.test(c.t)) ? 'km' : (leerVin(cs) && !leerVin(cs).dudoso ? 'vin' : 'placa')); }
   let filas = [], extra = '';
   if (tipo === 'matricula') { const m = leerMatricula(cs); extra = 'Lado detectado: <b>' + m.lado + '</b>' + (m.sal._aviso ? ' · <span class="wa">' + m.sal._aviso + '</span>' : '');
-    filas = Object.keys(NOMBRES).filter(k => m.sal[k]).map(k => [NOMBRES[k], m.sal[k]]); }
-  else { const r = tipo === 'placa' ? leerPlaca(cs) : tipo === 'km' ? leerKm(cs) : leerVin(cs); filas = [[{ placa: 'Placa', km: 'Kilometraje', vin: 'VIN' }[tipo], r]]; }
+    const esperados = m.lado.startsWith('frente') ? ['placa', 'vin', 'motor', 'marca', 'modelo', 'anio_modelo', 'color1', 'clase', 'tipo', 'cilindraje', 'pasajeros', 'combustible', 'pais', 'ramv'] : ['identificacion', 'propietario', 'provincia', 'canton', 'fecha_emision', 'fecha_caduca'];
+    const claves = esperados.concat(Object.keys(NOMBRES).filter(k => m.sal[k] && !esperados.includes(k)));
+    filas = claves.map(k => [NOMBRES[k], m.sal[k] || null, k]); }
+  else { const r = tipo === 'placa' ? leerPlaca(cs) : tipo === 'km' ? leerKm(cs) : leerVin(cs); filas = [[{ placa: 'Placa', km: 'Kilometraje', vin: 'VIN' }[tipo], r, tipo]]; }
   const tot = Math.round(t2 - t0), det = Math.round(t1 - t0), rec = Math.round(t2 - t1);
   $('tiempos').innerHTML = 'Tipo: <b>' + tipo + '</b> · foto ' + src.width + '×' + src.height + ' · ' + cs.length + ' textos · detección <b>' + det + ' ms</b> · lectura <b>' + rec + ' ms</b> · total <b>' + (tot / 1000).toFixed(2) + ' s</b>' + (extra ? '<br>' + extra : '');
-  $('campos').innerHTML = '<table><thead><tr><th>Campo</th><th>Valor</th><th>Conf.</th><th>Cómo</th></tr></thead><tbody>' + filas.map(([n, r]) => '<tr><td>' + n + '</td>' + (r ? '<td><b>' + esc(r.valor) + '</b>' + (r.alerta ? ' <span class="er">' + r.alerta + '</span>' : '') + '</td><td>' + r.conf + '</td><td class="' + (r.dudoso ? 'wa' : 'mu') + '">' + esc(r.nota) + '</td>' : '<td class="er" colspan="3">no encontrado</td>') + '</tr>').join('') + '</tbody></table>';
+  $('campos').innerHTML = '<table><thead><tr><th>Campo</th><th>Valor leído</th><th>¿Está bien?</th></tr></thead><tbody>' + filas.map(([n, r], i) => '<tr><td>' + n + (r ? '<div class="mu">' + r.conf + ' · <span class="' + (r.dudoso ? 'wa' : '') + '">' + esc(r.nota) + '</span></div>' : '') + '</td>' +
+    (r ? '<td><b>' + esc(r.valor) + '</b>' + (r.alerta ? '<div class="er">' + r.alerta + '</div>' : '') + '</td>' : '<td class="er">no encontrado</td>') +
+    '<td><div class="bm"><button data-i="' + i + '" data-e="correcto" class="si">Bien</button><button data-i="' + i + '" data-e="incorrecto" class="no">Mal</button></div><input class="real" data-i="' + i + '" placeholder="Valor real (opcional)" hidden></td></tr>').join('') + '</tbody></table>';
+  ACTUAL = { tipo, tamano: src.width + '×' + src.height, src, tiempos: { descarga: MED.info.descargaMs, inicio: MED.info.inicioMs, deteccion: det, lectura: rec, total: tot },
+    campos: filas.map(([n, r, k]) => ({ campo: k, nombre: n, leido: r ? r.valor : '', conf: r ? r.conf : null, como: r ? r.nota : 'no encontrado', estado: null, real: '' })), guardado: false };
+  $('cAut').hidden = true; $('autFoto').checked = false; $('gEstado').textContent = ''; $('guardar').disabled = false;
   const L = $('lienzo'); L.width = src.width; L.height = src.height; const x = L.getContext('2d'); x.drawImage(src, 0, 0); x.lineWidth = Math.max(2, src.width / 500); x.strokeStyle = '#00e676'; cs.forEach(c => { const r = c.rot; x.save(); x.translate(r.cx, r.cy); x.rotate(r.ang); x.strokeRect(-r.L / 2, -r.A / 2, r.L, r.A); x.restore(); });
   $('crudo').textContent = cs.map(c => c.t + '  (' + c.c + ')').join('\n'); $('cRes').hidden = false;
   HIST.push({ tipo, tam: src.width + '×' + src.height, cajas: cs.length, det, rec, tot }); pintarHist(); $('otra').disabled = false;
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 function pintarHist() { $('hist').innerHTML = HIST.map((h, i) => '<tr><td>' + (i + 1) + '</td><td>' + h.tipo + '</td><td>' + h.tam + '</td><td>' + h.cajas + '</td><td>' + h.det + ' ms</td><td>' + h.rec + ' ms</td><td><b>' + (h.tot / 1000).toFixed(2) + ' s</b></td></tr>').join(''); }
-$('archivo').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const im = new Image(); im.onload = () => { ultima = im; procesar(im); }; im.src = URL.createObjectURL(f); e.target.value = ''; });
+const alElegir = (e) => { const f = e.target.files[0]; if (!f) return; const im = new Image(); im.onload = () => { ultima = im; procesar(im); }; im.src = URL.createObjectURL(f); e.target.value = ''; };
+['camara', 'galeria'].forEach(id => $(id).addEventListener('change', alElegir));   // cámara directa o galería
 $('otra').addEventListener('click', () => { if (ultima) procesar(ultima); });
 $('copiar').addEventListener('click', async () => { const t = 'Maqueta PP-OCRv4 · ' + navigator.userAgent + '\nDescarga ' + MED.info.descargaMs + ' ms · inicio ' + MED.info.inicioMs + ' ms · hilos ' + MED.info.hilos + '\n' + HIST.map((h, i) => (i + 1) + ' · ' + h.tipo + ' · ' + h.tam + ' · ' + h.cajas + ' textos · det ' + h.det + ' ms · lectura ' + h.rec + ' ms · total ' + h.tot + ' ms').join('\n');
   try { await navigator.clipboard.writeText(t); $('copiado').textContent = 'Copiado'; } catch (e) { $('copiado').textContent = 'No se pudo copiar'; } });
+let ACTUAL = null; const CONEX = { url: 'https://qdciqoxselwmudlycprq.supabase.co', key: 'sb_publishable_pUrNhusonmxflSItZlU0fQ_ohRpCrYW' };
+const SB = window.supabase ? window.supabase.createClient(CONEX.url, CONEX.key, { auth: { persistSession: false, autoRefreshToken: false } }) : null;
+['probador', 'clave'].forEach(id => { try { $(id).value = localStorage.getItem('sirius-ocr-' + id) || ''; } catch (e) {} $(id).addEventListener('change', () => { try { localStorage.setItem('sirius-ocr-' + id, $(id).value.trim()); } catch (e) {} }); });
+$('campos').addEventListener('click', (e) => { const b = e.target.closest('button[data-e]'); if (!b || !ACTUAL) return; const i = +b.dataset.i, c = ACTUAL.campos[i]; c.estado = c.estado === b.dataset.e ? null : b.dataset.e;
+  b.parentNode.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.e === c.estado)); const inp = $('campos').querySelector('input.real[data-i="' + i + '"]'); inp.hidden = c.estado !== 'incorrecto';
+  $('cAut').hidden = !ACTUAL.campos.some(x => x.estado === 'incorrecto'); });
+$('campos').addEventListener('input', (e) => { if (e.target.matches('input.real') && ACTUAL) ACTUAL.campos[+e.target.dataset.i].real = e.target.value; });
+// datos personales: se envían enmascarados (la base vuelve a enmascarar)
+const enmascarar = (k, v) => !v ? v : (k === 'identificacion' || k === 'telefono') ? String(v).replace(/\d(?=\d{3})/g, '•') : k === 'propietario' ? String(v).trim().split(/\s+/).map(w => w[0] + '.').join(' ') : v;
+async function guardarResultado() {
+  if (!ACTUAL || ACTUAL.guardado) return; const probador = $('probador').value.trim(), clave = $('clave').value.trim();
+  if (!probador || !clave) { $('gEstado').innerHTML = '<span class="er">Escribe tu nombre y la clave de prueba (arriba).</span>'; return; }
+  if (!ACTUAL.campos.some(c => c.estado)) { $('gEstado').innerHTML = '<span class="er">Marca «Bien» o «Mal» en al menos un campo.</span>'; return; }
+  if (!SB) { $('gEstado').innerHTML = '<span class="er">Sin conexión con SIRIUS.</span>'; return; }
+  try { localStorage.setItem('sirius-ocr-probador', probador); localStorage.setItem('sirius-ocr-clave', clave); } catch (e) {}
+  $('guardar').disabled = true; $('gEstado').textContent = 'Guardando…';
+  const datos = { probador, dispositivo: navigator.userAgent.replace(/^.*?\(([^)]*)\).*$/, '$1').slice(0, 200), tipo: ACTUAL.tipo, tamano: ACTUAL.tamano, tiempos: ACTUAL.tiempos,
+    foto_autorizada: $('autFoto').checked, campos: ACTUAL.campos.map(c => ({ campo: c.campo, nombre: c.nombre, leido: enmascarar(c.campo, c.leido), conf: c.conf, como: c.como, estado: c.estado, real: enmascarar(c.campo, c.real) })) };
+  try { const { data, error } = await SB.rpc('ocr_prueba_registrar', { p_clave: clave, p_datos: datos }); if (error) throw error; if (!data || !data.ok) throw new Error((data && data.mensaje) || 'No se pudo guardar');
+    let nota = 'Guardado ✓';
+    if (data.subir_foto) { $('gEstado').textContent = 'Guardado · subiendo la foto…'; const blob = await new Promise(ok => ACTUAL.src.toBlob(ok, 'image/jpeg', 0.85));
+      const up = await SB.storage.from('ocr-pruebas').upload(data.ruta, blob, { contentType: 'image/jpeg', upsert: false });
+      if (up.error) nota = 'Guardado ✓ · la foto no se pudo subir (' + up.error.message + ')'; else { await SB.rpc('ocr_prueba_foto_subida', { p_clave: clave, p_id: data.id }); nota = 'Guardado ✓ · foto guardada'; } }
+    ACTUAL.guardado = true; $('gEstado').innerHTML = '<span class="ok">' + nota + '</span>';
+  } catch (e) { $('guardar').disabled = false; $('gEstado').innerHTML = '<span class="er">' + esc(e.message || e) + ' · vuelve a intentar</span>'; } }
+$('guardar').addEventListener('click', guardarResultado);
+$('verRes').addEventListener('click', async () => { const clave = $('clave').value.trim(); if (!clave) { $('res').innerHTML = '<span class="er">Escribe la clave de prueba (arriba).</span>'; return; }
+  $('res').textContent = 'Consultando…'; try { const { data, error } = await SB.rpc('ocr_prueba_resumen', { p_clave: clave }); if (error) throw error; if (!data.ok) throw new Error(data.mensaje);
+    const pc = (data.por_campo || []).map(x => { const conf = x.correctos + x.incorrectos; return '<tr><td>' + esc(x.nombre) + '</td><td><b>' + (conf ? Math.round(100 * x.correctos / conf) + ' %' : '—') + '</b></td><td>' + x.correctos + '</td><td>' + x.incorrectos + '</td><td>' + x.sin_confirmar + '</td></tr>'; }).join('');
+    const pd = (data.por_dispositivo || []).map(x => '<tr><td>' + esc(x.dispositivo || '—') + '</td><td>' + esc(x.tipo) + '</td><td>' + x.pruebas + '</td><td>' + (x.total_ms_promedio != null ? (x.total_ms_promedio / 1000).toFixed(2) + ' s' : '—') + '</td></tr>').join('');
+    $('res').innerHTML = '<p class="mu">' + data.total + ' pruebas · ' + data.probadores + ' probador(es)</p><table><thead><tr><th>Campo</th><th>Acierto</th><th>Bien</th><th>Mal</th><th>Sin marcar</th></tr></thead><tbody>' + pc + '</tbody></table>' +
+      '<p class="mu" style="margin-top:10px">Tiempo promedio por teléfono y tipo</p><table><thead><tr><th>Teléfono</th><th>Tipo</th><th>Pruebas</th><th>Total</th></tr></thead><tbody>' + pd + '</tbody></table>';
+  } catch (e) { $('res').innerHTML = '<span class="er">' + esc(e.message || e) + '</span>'; } });
 window.SIRIUS_OCR = { procesar, detectar, reconocer, leerMatricula, leerPlaca, leerKm, leerVin, listo: () => !!detS };   // para pruebas
 iniciar();
 </script>
